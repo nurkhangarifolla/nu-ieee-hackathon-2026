@@ -147,3 +147,83 @@ export function reviewSummary(payload) {
     voltage_context: context.meaning
   };
 }
+
+// ---- Readable names and the decisive evidence (application-owned constants; never read from report prose) ----
+// Names mirror igbt-test-cell/js/data.js (stages, rule labels); a test checks they stay equal.
+export const STAGE_NAMES = Object.freeze({
+  T00: 'Identification, visual, bench self-check', T01: 'Terminal integrity and freewheeling-diode check',
+  T02: 'Gate-driver supply behaviour', T03: 'Fibre command/status loop and gate levels', T06: 'Gate threshold',
+  T04: 'Insulation leakage to baseplate', T05: 'Pulsed on-state voltage', T07: 'Blocking leakage at test voltage',
+  T08a: 'Double pulse: DUT transistor switching', T08b: 'Double pulse: DUT diode reverse recovery',
+  T09: 'Out-of-saturation protection response', T10: 'Safe state and discharge verification'
+});
+export const QUANTITY_LABELS = Object.freeze({
+  Q01: 'Diode forward drop (low-current check)', Q02: 'Diode reverse direction reads open', Q03: 'Driver supply power, idle',
+  Q03b: 'Driver idle power, plausible band', Q04: 'Driver supply power, switching', Q05: 'Fibre status answers command',
+  Q06: 'Gate level, commanded ON', Q07: 'Gate level, commanded OFF', Q10: 'Gate threshold',
+  Q08: 'Insulation leakage, module to baseplate', Q09: 'V_CE(sat) at pulse current', Q11: 'Blocking leakage at test voltage',
+  Q16: 'Pulse-1 width t1', Q12: 'Switching di/dt', Q13: 'V_CE peak at turn-off', Q14: 'Protection response time',
+  Q18: 'Gate voltage after OFF command'
+});
+export const ABORT_REF = '/deterministic/overall/abort_reason';
+const READING_RE = /^\/deterministic\/stages\/(\d+)\/readings\/(\d+)\/(.+)$/;
+
+// Failed readings in stage order, with the configured limit they violated (null for boolean rules).
+export function failedChecks(payload) {
+  const facts = new Map(payload.evidence.map(e => [e.ref, e.value])), out = [];
+  for (const { ref, value } of payload.evidence) {
+    const m = ref.match(READING_RE);
+    if (!m || m[3] !== 'verdict' || value !== 'FAIL') continue;
+    const base = `/deterministic/stages/${m[1]}/readings/${m[2]}/`;
+    const v = facts.get(base + 'value'), type = facts.get(base + 'rule/type');
+    const min = facts.get(base + 'rule/min'), max = facts.get(base + 'rule/max');
+    let limit = null, bound = null;
+    if (typeof v === 'number') {
+      if ((type === 'max' || type === 'time_max') && typeof max === 'number') { limit = max; bound = 'maximum'; }
+      else if (type === 'min' && typeof min === 'number') { limit = min; bound = 'minimum'; }
+      else if (type === 'window') {
+        if (typeof max === 'number' && v > max) { limit = max; bound = 'maximum'; }
+        else if (typeof min === 'number') { limit = min; bound = 'minimum'; }
+      }
+    }
+    out.push({ valueRef: base + 'value', test_id: facts.get(`/deterministic/stages/${m[1]}/test_id`),
+      quantity_id: facts.get(base + 'quantity_id'), unit: facts.get(base + 'unit'), value: v, limit, bound,
+      expect: facts.get(base + 'rule/expect') });
+  }
+  return out;
+}
+
+// Mandatory refs: verdict, verification (when present), the stop trigger for an interruption, and the decisive
+// failed reading values (as many as fit within the evidence maximum).
+export function requiredReferences(payload, maxItems = 4) {
+  const facts = new Map(payload.evidence.map(e => [e.ref, e.value]));
+  const refs = [VERDICT_REF];
+  if (facts.has(VERIFY_REF)) refs.push(VERIFY_REF);
+  const stop = facts.get(ABORT_REF);
+  if (stop && stop !== 'SAFE_STATE_NOT_VERIFIED') refs.push(ABORT_REF);
+  if (facts.get(VERDICT_REF) === 'FAIL') for (const f of failedChecks(payload)) { if (refs.length >= maxItems) break; refs.push(f.valueRef); }
+  return refs;
+}
+
+// Readable label and value for a cited ref (for display; the ref itself stays internal).
+export function describeRef(payload, ref) {
+  const facts = new Map(payload.evidence.map(e => [e.ref, e.value])), value = facts.get(ref);
+  const fixed = { [VERDICT_REF]: 'Overall result', [VERIFY_REF]: 'Safe-state verification', [ABORT_REF]: 'Stop trigger',
+    '/deterministic/overall/block_reason': 'Block reason', '/deterministic/safe_state/door': 'Enclosure door',
+    '/deterministic/safe_state/final_state': 'Final bench state', '/deterministic/safe_state/v_bus_at_verification_v': 'Bus voltage at verification',
+    '/deterministic/safe_state/v_bus_at_start_v': 'Bus voltage at start', '/deterministic/safe_state/discharge_time_s': 'Discharge time',
+    '/deterministic/safe_state/trigger': 'Safe-state trigger', '/deterministic/physical_total_s': 'Estimated physical duration' };
+  if (fixed[ref]) return { label: fixed[ref], value };
+  let m = ref.match(READING_RE);
+  if (m) {
+    const t = facts.get(`/deterministic/stages/${m[1]}/test_id`), q = facts.get(`/deterministic/stages/${m[1]}/readings/${m[2]}/quantity_id`);
+    const unit = facts.get(`/deterministic/stages/${m[1]}/readings/${m[2]}/unit`);
+    const field = m[3] === 'value' ? '' : ' (' + m[3].replace('rule/', 'rule ') + ')';
+    return { label: `${t} ${QUANTITY_LABELS[q] || q}${field}`, value, unit: m[3] === 'value' && unit && unit !== 'bool' && unit !== 'boolean' ? unit : '' };
+  }
+  m = ref.match(/^\/deterministic\/stages\/(\d+)\/(test_id|status)$/);
+  if (m) { const t = facts.get(`/deterministic/stages/${m[1]}/test_id`); return { label: `${t} ${STAGE_NAMES[t] || ''} ${m[2] === 'status' ? 'status' : ''}`.trim(), value }; }
+  m = ref.match(/^\/deterministic\/events\/(\d+)\/(type|stage|physical_time_s)$/);
+  if (m) return { label: `Event ${facts.get(`/deterministic/events/${m[1]}/type`) || ''} ${m[2] === 'physical_time_s' ? 'time' : m[2]}`.trim(), value };
+  return { label: ref.split('/').pop().replace(/_/g, ' '), value };
+}

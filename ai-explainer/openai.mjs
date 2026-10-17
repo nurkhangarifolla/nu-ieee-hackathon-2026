@@ -1,4 +1,5 @@
-import { validateEvidence, VERDICT_REF, VERIFY_REF, verificationContext } from './evidence.mjs';
+import { validateEvidence, VERDICT_REF, VERIFY_REF, ABORT_REF, verificationContext, requiredReferences as mandatoryRefs,
+  failedChecks, STAGE_NAMES, QUANTITY_LABELS } from './evidence.mjs';
 
 export class ExplainerError extends Error {
   constructor(status, message, diagnostics) { super(message); this.status = status; if (diagnostics) this.diagnostics = diagnostics; }
@@ -11,7 +12,9 @@ const DIAGNOSTIC_CODES = new Set([
   'VERIFICATION_REFERENCE_MISSING', 'VERDICT_TEXT_MISSING', 'UNAVAILABLE_MODEL_ESTIMATE_MISSING',
   'UNAVAILABLE_VERIFICATION_WORDING_MISSING', 'UNAVAILABLE_NOT_VERIFIED_MISSING',
   'RESPONSE_BODY_MISSING', 'RESPONSE_BODY_LIMIT', 'RESPONSE_JSON_INVALID', 'RESPONSE_ENVELOPE_SHAPE',
-  'RESPONSE_INCOMPLETE', 'RESPONSE_CONTENT_SHAPE', 'RESPONSE_REFUSED', 'OUTPUT_TEXT_MISSING', 'OUTPUT_JSON_INVALID'
+  'RESPONSE_INCOMPLETE', 'RESPONSE_CONTENT_SHAPE', 'RESPONSE_REFUSED', 'OUTPUT_TEXT_MISSING', 'OUTPUT_JSON_INVALID',
+  'MANDATORY_REFERENCE_MISSING', 'FAIL_CHECK_NOT_NAMED', 'FAIL_VALUE_MISSING', 'FAIL_LIMIT_MISSING', 'STOP_TRIGGER_MISSING',
+  'SAFE_STATE_FOCUS_MISSING', 'UNSUPPORTED_SAFETY_CLAIM', 'POINTER_IN_TEXT'
 ]);
 const COUNT_KEYS = new Set(['summary_chars', 'evidence_items', 'item_chars', 'body_bytes', 'output_parts']);
 const INCOMPLETE_REASONS = new Set(['max_output_tokens', 'max_messages', 'content_filter', 'steered']);
@@ -25,7 +28,7 @@ function rejectResponse(code, counts = {}, message = 'OpenAI returned an invalid
     ...(code === 'RESPONSE_INCOMPLETE' ? { incomplete_reason: safeIncompleteReason(incompleteReason) } : {}) });
 }
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const requiredReferences = payload => [VERDICT_REF, ...(payload.evidence.some(e => e.ref === VERIFY_REF) ? [VERIFY_REF] : [])];
+const requiredReferences = payload => mandatoryRefs(payload, OUTPUT_LIMITS.evidence);
 // pattern and minItems/maxItems are documented Structured Outputs constraints. Cross-item uniqueness
 // and membership of particular mandatory refs remain prompt + validator rules (not uniqueItems/contains).
 const conciseText = (max, description) => ({ type: 'string', pattern: `^[\\s\\S]{1,${max}}$`, description });
@@ -42,6 +45,15 @@ Select only the most useful supporting evidence, NOT every supplied field. Cite 
 all refs must exactly match supplied refs. Include the mandatory refs specified below, each once, with no duplicates.
 Explain only each field's actual value; do not invent source fields or numeric claims not in evidence.
 Return only summary and supporting_evidence. Do not return limitations; fixed disclosures already render locally.
+Write concise technical English for a maintenance report. Do not restate that the data are synthetic, simulated or
+unapproved, and add no disclaimers: the application records that provenance separately.
+Lead the summary with the decisive finding: for FAIL, the failed check (test ID and name), its value with unit and the
+configured limit; for an interruption, the recorded stop trigger; for a locked bench, the verification problem.
+Keep module findings separate from bench shutdown and enclosure status (for example: a verified discharge and an
+unlocked enclosure do not overturn a failed module check). Never claim that all safety conditions were met or that the
+module is safe to energise, install or use, and do not diagnose a physical cause beyond the evidence.
+Refer to tests by ID and name (for example "T09 Out-of-saturation protection response"), never by JSON pointer;
+pointers belong only in the ref field.
 Use ${OUTPUT_LIMITS.minEvidence}-${OUTPUT_LIMITS.evidence} evidence items, retaining every mandatory ref.
 Summary: 1-2 short sentences, at most ${OUTPUT_LIMITS.summary} characters. Each evidence explanation: one short sentence,
 at most ${OUTPUT_LIMITS.explanation} characters.
@@ -58,7 +70,7 @@ export function requestBody(payload, model) {
   const verification = verificationContext(payload);
   return {
     model, store: false, max_output_tokens: 1400,
-    instructions: `${INSTRUCTIONS}\nMandatory supporting_evidence refs (each exactly once): ${mandatory.join(', ')}.\nThe summary must contain the exact case-sensitive verdict text "${verdict}".\nActual verification status: ${verification.status}.\nStatus-specific context: ${verification.meaning}`,
+    instructions: `${INSTRUCTIONS}\nMandatory supporting_evidence refs (each exactly once): ${mandatory.join(', ')}.\nThe summary must contain the exact case-sensitive verdict text "${verdict}".\nActual verification status: ${verification.status}.\nStatus-specific context: ${verification.meaning}\n${focusLine(payload)}\nTest names: ${Object.entries(STAGE_NAMES).map(([k, v]) => k + ' ' + v).join('; ')}.\nQuantity names: ${Object.entries(QUANTITY_LABELS).map(([k, v]) => k + ' ' + v).join('; ')}.`,
     input: [{ role: 'user', content: [{ type: 'input_text', text: JSON.stringify(payload) }] }],
     text: { format: { type: 'json_schema', name: 'report_explanation', strict: true, schema: {
       type: 'object', additionalProperties: false, required: ['summary', 'supporting_evidence'],
@@ -74,6 +86,26 @@ export function requestBody(payload, model) {
       }
     } } }
   };
+}
+
+// True when text contains a number equal to target (display rounding to 2 dp tolerated; minus sign or U+2212).
+function mentionsNumber(text, target) {
+  const tol = 0.005 + 1e-9 * Math.abs(target);
+  return (String(text).replace(/−/g, '-').match(/-?\d+(?:\.\d+)?/g) || []).some(n => Math.abs(Number(n) - target) <= tol);
+}
+// One line telling the model the decisive finding to lead with (application-derived, not report prose).
+function focusLine(payload) {
+  const facts = new Map(payload.evidence.map(e => [e.ref, e.value])), fails = failedChecks(payload);
+  if (facts.get(VERDICT_REF) === 'FAIL' && fails.length) {
+    const f = fails[0], unit = f.unit && f.unit !== 'bool' && f.unit !== 'boolean' ? ' ' + f.unit : '';
+    return `Decisive finding: ${f.test_id} ${STAGE_NAMES[f.test_id]}, ${QUANTITY_LABELS[f.quantity_id]} = ${f.value}${unit}` +
+      (typeof f.limit === 'number' ? ` against the configured ${f.bound} of ${f.limit}${unit}.` : ` (expected ${f.expect}).`) +
+      (fails.length > 1 ? ` ${fails.length - 1} further check(s) also failed.` : '') + ' Name the test ID, the value and the limit in the summary.';
+  }
+  const stop = facts.get(ABORT_REF);
+  if (stop && stop !== 'SAFE_STATE_NOT_VERIFIED') return `Decisive finding: the run was stopped by ${stop}. Name that trigger in the summary; no module verdict was reached.`;
+  if (facts.get('/deterministic/safe_state/final_state') === 'FAULT_LOCKED') return 'Decisive finding: the safe-state verification problem; the enclosure stayed locked. Lead with it.';
+  return 'Decisive finding: state the overall result and the verification status.';
 }
 
 export function validateExplanation(result, payload) {
@@ -109,6 +141,27 @@ export function validateExplanation(result, payload) {
     if (!/\bverification\s+(?:(?:is|was)\s+)?unavailable\b/i.test(generated)) rejectResponse('UNAVAILABLE_VERIFICATION_WORDING_MISSING', counts);
     if (!/\bnot\s+independently\s+verified\b/i.test(generated)) rejectResponse('UNAVAILABLE_NOT_VERIFIED_MISSING', counts);
   }
+  for (const ref of requiredReferences(payload)) if (!citations.has(ref)) rejectResponse('MANDATORY_REFERENCE_MISSING', counts);
+  const all = [result.summary, ...result.supporting_evidence.map(item => item.explanation)].join(' ');
+  if (/\/deterministic\//.test(all)) rejectResponse('POINTER_IN_TEXT', counts);
+  if (/\ball\s+(?:the\s+)?(?:safety\s+)?conditions\s+(?:were\s+|are\s+|have\s+been\s+)?(?:met|satisfied)\b|\bsafe\s+to\s+(?:energi[sz]e|install|operate|use)\b/i.test(all))
+    rejectResponse('UNSUPPORTED_SAFETY_CLAIM', counts);
+  // Decisive finding must lead: failed check named with value and limit; stop trigger; verification problem
+  const verdictValue = facts.get(VERDICT_REF), fails = failedChecks(payload);
+  if (verdictValue === 'FAIL' && fails.length) {
+    const f = fails[0];
+    if (!result.summary.includes(f.test_id) && !result.summary.includes(f.quantity_id)) rejectResponse('FAIL_CHECK_NOT_NAMED', counts);
+    if (typeof f.value === 'number' && !mentionsNumber(result.summary, f.value)) rejectResponse('FAIL_VALUE_MISSING', counts);
+    if (typeof f.limit === 'number' && !mentionsNumber(result.summary, f.limit)) rejectResponse('FAIL_LIMIT_MISSING', counts);
+  }
+  const stop = facts.get(ABORT_REF);
+  if (stop && stop !== 'SAFE_STATE_NOT_VERIFIED') {
+    const il = /^IL(\d)_OPEN$/.exec(stop);
+    const named = il ? new RegExp('\\bIL' + il[1] + '\\b').test(result.summary) : stop === 'OPERATOR' ? /operator/i.test(result.summary) : /watchdog|heartbeat/i.test(result.summary);
+    if (!named) rejectResponse('STOP_TRIGGER_MISSING', counts);
+  }
+  if (facts.get('/deterministic/safe_state/final_state') === 'FAULT_LOCKED' && !/discharge|verification/i.test(result.summary))
+    rejectResponse('SAFE_STATE_FOCUS_MISSING', counts);
   return result;
 }
 

@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { request } from 'node:http';
-import { prepareReport, validateEvidence, reviewSummary, VERDICT_REF, VERIFY_REF, REPORT_LIMIT, EVIDENCE_LIMIT, STANDARD_LIMITATIONS, verificationContext } from '../evidence.mjs';
+import { prepareReport, validateEvidence, reviewSummary, VERDICT_REF, VERIFY_REF, REPORT_LIMIT, EVIDENCE_LIMIT, STANDARD_LIMITATIONS, verificationContext,
+  requiredReferences, failedChecks, describeRef, STAGE_NAMES, QUANTITY_LABELS, ABORT_REF } from '../evidence.mjs';
 import { explain, requestBody, validateExplanation, OUTPUT_LIMITS } from '../openai.mjs';
 import { createExplainerServer } from '../server.mjs';
 
@@ -14,11 +15,20 @@ const reports = Object.fromEntries(['S0', 'S4', 'S8', 'S8b', 'S5'].map(id => [id
 const clone = value => JSON.parse(JSON.stringify(value));
 const payload = prepareReport(reports.S8b);
 const values = p => new Map(p.evidence.map(e => [e.ref, e.value]));
+// A valid, failure-focused explanation (test fixture only): leads with the failed check, stop trigger or
+// verification problem and cites every mandatory ref.
 function good(p = payload) {
   const facts = values(p), unavailable = facts.get(VERIFY_REF) === 'VERIFICATION_UNAVAILABLE';
+  const verdict = facts.get(VERDICT_REF), f = failedChecks(p)[0], stop = facts.get(ABORT_REF);
+  let lead = `${verdict}.`;
+  if (verdict === 'FAIL' && f) lead = `FAIL: ${f.test_id} ${QUANTITY_LABELS[f.quantity_id]} was ${f.value} ${f.unit} against the configured ${f.bound} of ${f.limit} ${f.unit}.`;
+  else if (stop && stop !== 'SAFE_STATE_NOT_VERIFIED') lead = `${verdict}: the run was stopped by ${stop.replace('_OPEN', '')}.`;
+  else if (facts.get('/deterministic/safe_state/final_state') === 'FAULT_LOCKED') lead = `${verdict}: discharge verification problem; the enclosure stayed locked.`;
+  const refs = requiredReferences(p);
+  if (refs.length < 2) refs.push('/deterministic/overall/block_reason');
   return {
-    summary: `Existing outcome ${facts.get(VERDICT_REF)}. ${unavailable ? 'Bus voltage is a model estimate; verification is unavailable and the voltage is not independently verified.' : 'The verification state describes synthetic data only.'}`,
-    supporting_evidence: [VERDICT_REF, facts.has(VERIFY_REF) ? VERIFY_REF : '/deterministic/overall/block_reason'].map(ref => ({ ref, explanation: `Reported value: ${facts.get(ref)}.` }))
+    summary: `${lead} ${unavailable ? 'Bus voltage is a model estimate; verification is unavailable and the voltage is not independently verified.' : 'Verification status as recorded.'}`,
+    supporting_evidence: refs.map(ref => ({ ref, explanation: `Reported value: ${facts.get(ref)}.` }))
   };
 }
 const envelope = result => ({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(result) }] }] });
@@ -133,7 +143,7 @@ for (const id of ['S0', 'S4', 'S8', 'S8b']) {
     const p = prepareReport(reports[id]), before = JSON.stringify(p), result = good(p), facts = values(p);
     assert.ok(p.evidence.length > 100); // Exercise the full projection, not the reduced live-check payload.
     const refs = ['/deterministic/safe_state/door', '/deterministic/safe_state/v_bus_at_verification_v'];
-    for (const ref of refs) result.supporting_evidence.push({ ref, explanation: `Synthetic field value: ${facts.get(ref)}.` });
+    for (const ref of refs) if (result.supporting_evidence.length < 4 && facts.has(ref)) result.supporting_evidence.push({ ref, explanation: `Field value: ${facts.get(ref)}.` });
     const schema = requestBody(p, 'gpt-4.1-mini').text.format.schema.properties;
     assert.ok(result.supporting_evidence.length <= schema.supporting_evidence.maxItems);
     let calls = 0;
@@ -159,7 +169,7 @@ test('two evidence items are required even when no verification procedure ran', 
 
 test('S8b qualification can be in generated evidence independently of the summary', () => {
   const result = good();
-  result.summary = 'ABORTED. The enclosure remains locked.';
+  result.summary = 'ABORTED. Discharge could not be confirmed; the enclosure remains locked.';
   result.supporting_evidence[1].explanation = 'Verification is unavailable; retained voltage is a model estimate, not independently verified.';
   assert.deepEqual(validateExplanation(result, payload), result);
   assert.deepEqual(Object.keys(result).sort(), ['summary', 'supporting_evidence']);
@@ -475,4 +485,68 @@ test('the app report path (/api/explain from the companion) keeps the same valid
     assert.equal(body.explanation.summary, good(p).summary);
     assert.equal(calls, 1);
   });
+});
+
+// ---- Failure-focused output (decisive evidence supplied and required) ----
+const more = Object.fromEntries(['S2', 'S3'].map(id => [id, JSON.parse(execFileSync(process.execPath, [runner, id, '--report'], { encoding: 'utf8' }))]));
+const s3 = prepareReport(more.S3);
+const q14 = failedChecks(s3)[0];
+const s3Example = () => ({
+  summary: 'FAIL: T09 protection response was 18 µs against the configured maximum of 10 µs, exceeding it by 8 µs. Discharge verification succeeded and the enclosure unlocked; that does not overturn the failed module check.',
+  supporting_evidence: [
+    { ref: q14.valueRef, explanation: 'T09 Protection response time measured 18 µs; the configured maximum is 10 µs.' },
+    { ref: VERDICT_REF, explanation: 'Overall result is FAIL because a required module check failed.' },
+    { ref: VERIFY_REF, explanation: 'Discharge was verified; this is bench status, separate from the module finding.' }
+  ]
+});
+const rejects = (result, p, code) => assert.throws(() => validateExplanation(result, p), e => { assert.deepEqual(e.diagnostics.codes, [code]); return true; });
+
+test('S3 FAIL: the failed reading is supplied, mandatory, and named in the request', () => {
+  assert.equal(q14.test_id, 'T09'); assert.equal(q14.quantity_id, 'Q14'); assert.equal(q14.value, 18); assert.equal(q14.limit, 10); assert.equal(q14.bound, 'maximum');
+  assert.deepEqual(requiredReferences(s3), [VERDICT_REF, VERIFY_REF, q14.valueRef]);
+  const body = requestBody(s3, 'gpt-4.1-mini');
+  assert.match(body.instructions, /Decisive finding: T09 Out-of-saturation protection response, Protection response time = 18 µs against the configured maximum of 10 µs\./);
+  assert.match(body.instructions, /never by JSON pointer/); assert.match(body.instructions, /Never claim that all safety conditions were met/);
+  assert.match(body.text.format.schema.properties.supporting_evidence.description, new RegExp(q14.valueRef.replace(/[/]/g, '\/')));
+});
+
+test('S3 FAIL: the example explanation is accepted; weaker variants are rejected with specific codes', () => {
+  assert.deepEqual(validateExplanation(s3Example(), s3), s3Example());
+  let r = s3Example(); r.summary = 'FAIL: T09 protection response exceeded the configured maximum of 10 µs.'; rejects(r, s3, 'FAIL_VALUE_MISSING');
+  r = s3Example(); r.summary = 'FAIL: T09 protection response was 18 µs, which is too slow.'; rejects(r, s3, 'FAIL_LIMIT_MISSING');
+  r = s3Example(); r.summary = 'FAIL: the protection response was 18 µs against a maximum of 10 µs.'; rejects(r, s3, 'FAIL_CHECK_NOT_NAMED');
+  r = s3Example(); r.supporting_evidence.shift(); rejects(r, s3, 'MANDATORY_REFERENCE_MISSING');
+  r = s3Example(); r.summary += ' All safety conditions were met.'; rejects(r, s3, 'UNSUPPORTED_SAFETY_CLAIM');
+  r = s3Example(); r.supporting_evidence[0].explanation = 'See /deterministic/stages/10/readings/0/value.'; rejects(r, s3, 'POINTER_IN_TEXT');
+});
+
+test('S2 FAIL: decisive Q09 value and limit are required in the summary', () => {
+  const p = prepareReport(more.S2), f = failedChecks(p)[0];
+  assert.equal(f.quantity_id, 'Q09'); assert.equal(f.limit, 3.2);
+  assert.ok(requiredReferences(p).includes(f.valueRef));
+  assert.deepEqual(validateExplanation(good(p), p), good(p));
+});
+
+test('S4 interruption: the stop trigger is mandatory and must be named', () => {
+  const p = prepareReport(reports.S4);
+  assert.ok(requiredReferences(p).includes(ABORT_REF));
+  const r = good(p); assert.deepEqual(validateExplanation(r, p), r);
+  r.summary = 'ABORTED: the run stopped early. Verification status as recorded.'; rejects(r, p, 'STOP_TRIGGER_MISSING');
+});
+
+test('S8 bench fault: the summary must lead with the verification/discharge problem', () => {
+  const p = prepareReport(reports.S8), r = good(p);
+  assert.deepEqual(validateExplanation(r, p), r);
+  r.summary = 'ABORTED. The enclosure stayed locked.'; rejects(r, p, 'SAFE_STATE_FOCUS_MISSING');
+});
+
+test('readable names mirror the app data, and cited refs are described without pointers', () => {
+  const ctx = {}; ctx.window = ctx; vm.createContext(ctx);
+  vm.runInContext(execFileSync(process.execPath, ['-e', "process.stdout.write(require('fs').readFileSync(process.argv[1],'utf8'))", fileURLToPath(new URL('../../igbt-test-cell/js/data.js', import.meta.url))], { encoding: 'utf8' }), ctx);
+  const D = ctx.APP_DATA;
+  assert.deepEqual(Object.fromEntries(D.stages.map(s => [s.test_id, s.name])), { ...STAGE_NAMES });
+  assert.deepEqual(Object.fromEntries(D.profiles[0].rules.map(r => [r.quantity_id, r.label])), { ...QUANTITY_LABELS });
+  const d = describeRef(s3, q14.valueRef);
+  assert.deepEqual(d, { label: 'T09 Protection response time', value: 18, unit: 'µs' });
+  assert.equal(describeRef(s3, VERIFY_REF).label, 'Safe-state verification');
 });

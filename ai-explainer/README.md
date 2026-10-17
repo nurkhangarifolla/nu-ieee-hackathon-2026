@@ -27,6 +27,10 @@ The same service also serves the test-cell app read-only at **http://127.0.0.1:8
 
 `igbt-test-cell/` itself still has no network code: opened from `file://` it works offline as before, the AI button is not shown, and section B states that no AI analysis was generated. Architecture change: AI requires running this local service with `OPENAI_API_KEY` in its environment and Internet access; the key never reaches the browser.
 
+### Failure-focused output (18 Oct)
+
+The request now names the decisive finding and requires it: for FAIL, the first failed reading (test ID, value and configured limit, from the projected evidence) and its value ref are mandatory; for an interruption, the stop trigger (`/deterministic/overall/abort_reason`) is mandatory and must be named; for a locked bench, the summary must lead with the discharge/verification problem. Module findings and bench/enclosure status are kept apart. New rejection codes: `MANDATORY_REFERENCE_MISSING`, `FAIL_CHECK_NOT_NAMED`, `FAIL_VALUE_MISSING`, `FAIL_LIMIT_MISSING`, `STOP_TRIGGER_MISSING`, `SAFE_STATE_FOCUS_MISSING`, `UNSUPPORTED_SAFETY_CLAIM` ("all safety conditions met", "safe to energise/install/use") and `POINTER_IN_TEXT`. Test and quantity names come from application constants (`STAGE_NAMES`, `QUANTITY_LABELS`, checked against `igbt-test-cell/js/data.js`); cited refs are shown as readable labels and values, and JSON pointers stay internal. The prompt asks for concise technical text without simulation/disclaimer prose; provenance stays in the raw JSON. Output bounds, the 1,400-token cap, explicit generation and server-side credentials are unchanged. Not yet verified with a live call.
+
 ## Data and limits
 
 Schema 0.3 synthetic reports only. Maximum source file 512 KiB; outgoing evidence 32 KiB/350 scalar fields; stages 12, events at most 200. Numeric values must be finite and within ±1e9. Unknown/free-text enum values are rejected. Unsupported report shapes fail closed.

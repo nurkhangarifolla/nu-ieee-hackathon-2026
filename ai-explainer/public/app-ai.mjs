@@ -2,7 +2,7 @@
 // Registers window.IGBT_AI so the app's report screen can request one analysis on an explicit click.
 // The same client-side projection as the explainer page is used (prepareReport), the server validates it again,
 // and the OpenAI key stays in the server process. No placeholder text: failures are thrown as errors.
-import { prepareReport } from '/evidence.mjs';
+import { prepareReport, describeRef } from '/evidence.mjs';
 
 async function explain(report) {
   const payload = prepareReport(report);
@@ -23,11 +23,14 @@ async function explain(report) {
     const diagnostic = body.diagnostics ? ` Diagnostics: ${JSON.stringify(body.diagnostics)}` : '';
     throw new Error((body.error || 'AI request failed. No automatic retry.') + diagnostic);
   }
-  const facts = new Map(payload.evidence.map(e => [e.ref, e.value]));
+  // Cited refs stay internal; the report shows a readable label and the recorded value instead.
   return {
     model: body.model,
     summary: body.explanation.summary,
-    items: body.explanation.supporting_evidence.map(i => ({ ref: i.ref, value: facts.get(i.ref), explanation: i.explanation }))
+    items: body.explanation.supporting_evidence.map(i => {
+      const d = describeRef(payload, i.ref);
+      return { ref: i.ref, label: d.label, value: d.value, unit: d.unit || '', explanation: i.explanation };
+    })
   };
 }
 
