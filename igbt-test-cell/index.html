@@ -6,7 +6,7 @@
 <meta name="description" content="Offline virtual prototype of an IGBT phase-module bench test cell: operator workflow, sequencing, safety behaviour and reporting. Simulated data only.">
 <meta name="color-scheme" content="light dark">
 <script src="js/theme.js"></script>
-<title>IGBT Test Cell — Virtual Prototype (SIMULATION)</title>
+<title>IGBT Test Cell</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAMklEQVR42mNgGAWDCpTtJIz+EwFGLRi1YNSCUQsoseA/lcCoBaMWjFowagElFoyCAQEAswS1rDXX+5EAAAAASUVORK5CYII=">
 <style>
   /* Tokens: calm light UI proposal (said/ui-premium). Token names are kept so every screen still resolves;
@@ -55,13 +55,6 @@
   .skip { position:absolute; left:var(--s-lg); top:-100px; z-index:var(--z-skip); background:var(--primary);
           color:var(--on-primary); font-weight:700; padding:var(--s-md) var(--s-lg); border-radius:var(--r-sm); }
   .skip:focus { top:var(--s-sm); }
-
-  /* SIMULATION notice: persistent on every screen (C4); one compact neutral line */
-  .sticky-top { position:sticky; top:0; z-index:var(--z-banner); }
-  #sim-banner { display:flex; align-items:center; justify-content:center; gap:var(--s-sm);
-                background:var(--notice-bg); color:var(--label); font-weight:600; font-size:13px; line-height:1.4;
-                text-align:center; padding:6px var(--s-lg); }
-  #sim-banner::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--mute); }
 
   /* Header and workflow: one light surface */
   .topbar { background:var(--canvas); color:var(--ink); }
@@ -207,13 +200,6 @@
   footer { color:var(--mute); font-size:13px; line-height:1.5; border-top:1px solid var(--hairline); }
   .footer-inner { max-width:1120px; margin:0 auto; padding:var(--s-lg) var(--s-xl); display:flex; flex-wrap:wrap; gap:var(--s-xs) var(--s-xl); }
   footer strong { color:var(--label); font-weight:600; }
-
-  /* FAULT_LOCKED banner (02 §7.2): error fill, white text, below the SIMULATION banner */
-  #fault-banner { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:var(--s-md) var(--s-lg);
-                  background:var(--fault-bg); color:#ffffff; font-weight:700; font-size:16px; padding:var(--s-sm) var(--s-lg); }
-  #fault-banner button { min-height:36px; border:1px solid #ffffff; background:transparent; color:#ffffff; padding:0 var(--s-lg); }
-  #fault-banner button:hover { background:rgba(0, 0, 0, 0.2); }
-  #fault-banner :focus-visible { outline-color:#ffffff; }
 
   .lead { margin:var(--s-lg) 0 0; }
   .small { font-size:13px; }
@@ -402,6 +388,10 @@
   .oc-verdict { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-sm) var(--s-md); margin:var(--s-lg) 0 var(--s-xs); }
   #result-verdict { font-size:13px; font-weight:700; padding:3px 10px; border-width:1px; border-radius:999px; }
   .outcome .verdict-label { margin:0; font-size:13px; font-weight:500; line-height:1.45; color:var(--mute); }
+  #btn-reset-sim { margin-top:var(--s-md); }
+  .ai-bar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-sm) var(--s-lg); margin-top:var(--s-lg); }
+  .ai-bar p { margin:0; }
+  .ai-bar .err { color:var(--error-deep); }
   .lockout-note { margin-top:var(--s-sm) !important; font-size:14px; font-weight:600; color:var(--error-deep); }
   .outcome-reason { font-size:14px; color:var(--label); line-height:1.5; }
   .outcome .meta { margin-top:var(--s-sm); }
@@ -469,21 +459,13 @@
 </head>
 <body>
 <a class="skip" href="#app">Skip to content</a>
-<div class="sticky-top">
-  <div id="sim-banner" role="status"></div>
-  <div id="fault-banner" role="alert" hidden>
-    <span id="fault-text"></span>
-    <button type="button" id="btn-reset-sim">Reset simulation</button>
-  </div>
-</div>
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
-      <h1>Virtual IGBT test cell</h1>
+      <h1>IGBT Test Cell</h1>
     </div>
     <span id="profile-badge" class="badge"></span>
     <button type="button" id="theme-toggle" class="quiet theme-toggle" aria-pressed="false">Dark mode</button>
-    <button type="button" id="open-limitations" class="quiet" aria-haspopup="dialog">Limitations</button>
   </div>
 </header>
 <nav class="steps" aria-label="Workflow">
@@ -564,7 +546,7 @@
 
     <div id="custom-panel" class="panel" hidden>
       <h3>Custom module parameters</h3>
-      <p class="muted">Fictional module; illustrative values, checked before the run.</p>
+      <p class="muted">Values are checked before the run.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col">Unit</th><th scope="col">Note</th></tr></thead>
@@ -603,9 +585,8 @@
     <h2 id="h-blocked" tabindex="-1">Configuration blocked</h2>
     <div class="meta" id="blocked-run"></div>
     <p class="alert alert-warn" id="blocked-text" role="status"></p>
-    <div class="verdict-row"><span>Overall</span> <span class="verdict verdict-ne">NOT EVALUATED</span></div>
-    <p id="blocked-label"></p>
-    <p class="muted" id="blocked-reason"></p>
+    <p id="blocked-label" hidden></p>
+    <p class="muted small" id="blocked-reason"></p>
     <div class="actions">
       <button type="button" class="btn-back">Back</button>
       <button type="button" id="btn-export-blocked">Download JSON</button>
@@ -673,7 +654,7 @@
           <ol class="stage-list" id="stage-list"></ol>
         </div>
         <details class="inline-details fault-sim">
-          <summary>Simulate a fault</summary>
+          <summary>Inject a fault</summary>
           <div class="controls">
             <button type="button" class="danger" id="btn-door">Open door</button>
             <button type="button" class="danger" id="btn-heartbeat">Heartbeat loss</button>
@@ -697,7 +678,6 @@
             <div class="clock"><span class="k">Animation time</span><span class="v" id="clock-anim"></span></div>
             <div class="clock"><span class="k">Speed</span><span class="v" id="clock-speed"></span></div>
           </div>
-          <p class="caption" id="clock-caption"></p>
           <div class="meta" id="run-meta"></div>
         </div>
       </div>
@@ -719,19 +699,19 @@
     <p class="eyebrow">Step 4 of 5</p>
     <h2 id="h-result" tabindex="-1">Review outcome</h2>
 
-    <!-- Outcome kind (display only, from overall verdict, abort reason and final state): passed, module failed,
-         interrupted, bench fault, incomplete. The verdict and its fixed qualification label stay below it. -->
+    <!-- Outcome card: kind (from overall verdict, abort reason and final state), concise reason, enclosure
+         status and, while access is locked out, the Reset bench action. Shown once. -->
     <div class="outcome" id="result-outcome">
       <div>
         <p class="oc-kind" id="result-kind"></p>
         <div class="oc-detail" id="result-kind-detail"></div>
-        <div class="oc-verdict"><span id="result-verdict" class="verdict"></span><span class="verdict-label" id="result-label"></span></div>
-        <p class="outcome-reason" id="result-precedence"></p>
+        <span id="result-verdict" hidden></span><span id="result-label" hidden></span><span id="result-precedence" hidden></span>
         <div class="meta" id="result-noise" hidden></div>
       </div>
       <div class="outcome-side">
         <p class="k">Enclosure</p>
         <div id="result-enclosure"></div>
+        <button type="button" class="danger" id="btn-reset-sim" hidden>Reset bench</button>
       </div>
     </div>
 
@@ -748,13 +728,13 @@
         <summary>Readings <span class="muted" id="result-readings-count"></span></summary>
         <div class="table-wrap">
           <table class="results">
-            <thead><tr><th scope="col">Test</th><th scope="col">Quantity</th><th scope="col">Value</th><th scope="col">Rule</th><th scope="col">Basis · reference · approval</th><th scope="col">Margin</th><th scope="col">Verdict</th></tr></thead>
+            <thead><tr><th scope="col">Test</th><th scope="col">Reading</th><th scope="col">Value</th><th scope="col">Reference range</th><th scope="col">Margin</th><th scope="col">Result</th></tr></thead>
             <tbody id="result-body"></tbody>
           </table>
         </div>
       </details>
       <details class="section-details" id="ev-hyp">
-        <summary>Hypotheses (not diagnoses) <span class="muted" id="result-hyp-count"></span></summary>
+        <summary>Possible causes <span class="muted" id="result-hyp-count"></span></summary>
         <ul class="hyp" id="result-hyp"></ul>
       </details>
       <details class="section-details" id="ev-safe">
@@ -767,7 +747,6 @@
           <div class="clock"><span class="k">Estimated physical total</span><span class="v" id="result-phys"></span></div>
           <div class="clock"><span class="k">Animation total</span><span class="v" id="result-anim"></span></div>
         </div>
-        <p class="caption" id="result-caption"></p>
         <div class="table-wrap">
           <table>
             <thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Physical components</th><th scope="col">Estimate s</th></tr></thead>
@@ -789,7 +768,10 @@
     <p class="eyebrow">Step 5 of 5</p>
     <h2 id="h-report" tabindex="-1">Report</h2>
     <div class="meta" id="report-meta"></div>
-    <p class="muted lead">Save PDF opens the print dialog for this report only; choose “Save as PDF” as the printer.</p>
+    <div class="ai-bar" id="ai-bar" hidden>
+      <button type="button" id="btn-ai-generate">Generate AI analysis</button>
+      <p class="muted small" id="ai-status" role="status" aria-live="polite"></p>
+    </div>
     <div class="preview-wrap">
       <iframe id="report-preview" class="preview" title="HTML report preview"></iframe>
     </div>
@@ -807,19 +789,10 @@
 
 <footer>
   <div class="footer-inner">
-    <span><strong>IGBT Test Cell</strong> · virtual prototype <span id="footer-version"></span></span>
-    <span id="footer-text"></span>
+    <span><strong>IGBT Test Cell</strong> <span id="footer-version"></span></span>
   </div>
 </footer>
 
-<dialog id="limitations" aria-labelledby="limitations-title">
-  <h2 id="limitations-title">Limitations</h2>
-  <p class="muted" id="limitations-profile"></p>
-  <p id="limitations-text"></p>
-  <h3>Chip legend</h3>
-  <ul id="chip-legend"></ul>
-  <button type="button" id="close-limitations">Close</button>
-</dialog>
 
 <script src="js/data.js"></script>
 <script src="js/validate.js"></script>

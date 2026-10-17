@@ -37,31 +37,14 @@ window.IGBT.ui = (function () {
     return "RUN-" + d.getFullYear() + pad(d.getMonth() + 1, 2) + pad(d.getDate(), 2) + "-" + pad(runCounter, 4);
   }
 
-  // ---- shared chrome: banner, badge, limitations, footer, FAULT_LOCKED banner ----
+  // ---- shared chrome: footer version. Simulation/limitation texts stay in the JSON report (simulation_banner,
+  // limitations); the operator screens no longer show a banner, a Limitations dialog or a global fault banner. ----
   function renderChrome() {
-    $("sim-banner").textContent = D.fixed_texts.banner;
-    $("limitations-text").textContent = D.fixed_texts.limitations;
-    var legend = clear($("chip-legend"));
-    D.fixed_texts.chip_legend.forEach(function (c) {
-      var cls = "chip" + (c.chip === "NOT APPROVED" ? " chip-na" : "");
-      legend.appendChild(el("li", null, [el("span", { class: cls, text: c.chip }), " = " + c.meaning]));
-    });
-    if ($("footer-text")) $("footer-text").textContent = D.fixed_texts.report_footer;
     if ($("footer-version")) $("footer-version").textContent = "v" + D.software_version;
-    if ($("fault-text")) $("fault-text").textContent = D.fixed_texts.fault_locked_banner;
-
-    // Limitations: native modal dialog (Escape closes, focus returns); plain toggle where unsupported
-    var dlg = $("limitations"), opener = $("open-limitations");
-    opener.addEventListener("click", function () {
-      if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
-    });
-    function closeDialog() {
-      if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open");
-      opener.focus();
-    }
-    $("close-limitations").addEventListener("click", closeDialog);
-    dlg.addEventListener("click", function (e) { if (e.target === dlg) closeDialog(); });
   }
+  // Operator labels for profile IDs (display only; the profile_id in setup and JSON is unchanged)
+  var PROFILE_LABEL = { demo: "Standard", production_unconfigured: "Production (no limits configured)" };
+  function profileLabel(id) { return PROFILE_LABEL[id] || id; }
   function setBadge(profileId) {
     var p = V.findProfile(profileId);
     var b = $("profile-badge");
@@ -122,7 +105,7 @@ window.IGBT.ui = (function () {
   }
   function sec(x) { return F.fixed(x, 2) + " s"; }
   function runMeta(setup, inputs) {
-    return setup.run_id + " · scenario " + inputs.scenario_id + " (" + inputs.scenario_name + ") · profile " + inputs.profile_id +
+    return setup.run_id + " · scenario " + inputs.scenario_id + " (" + inputs.scenario_name + ") · profile " + profileLabel(inputs.profile_id) +
       " · seed " + inputs.seed + " · noise " + (inputs.noise_rel_sigma > 0 ? "σ " + inputs.noise_rel_sigma : "off") +
       " · speed " + inputs.speed + "× · operator " + setup.operator;
   }
@@ -163,7 +146,7 @@ window.IGBT.ui = (function () {
     Array.prototype.forEach.call(document.querySelectorAll("#quick-scenarios [data-scenario]"), function (b) {
       b.setAttribute("aria-pressed", String(b.getAttribute("data-scenario") === id));
     });
-    if ($("advanced-summary")) $("advanced-summary").textContent = "profile " + effectiveProfileId() + " · noise " + $("in-noise").value +
+    if ($("advanced-summary")) $("advanced-summary").textContent = "profile " + profileLabel(effectiveProfileId()) + " · noise " + $("in-noise").value +
       " · seed " + $("in-seed").value + " · " + $("in-speed").value + "×";
   }
   // Each shortcut sets the full selector and fires its change handler (refreshSetup), the same path as picking it there
@@ -190,7 +173,7 @@ window.IGBT.ui = (function () {
       scSel.appendChild(o);
     });
     var pSel = $("in-profile");
-    D.profiles.forEach(function (p) { pSel.appendChild(el("option", { value: p.profile_id, text: p.profile_id })); });
+    D.profiles.forEach(function (p) { pSel.appendChild(el("option", { value: p.profile_id, text: profileLabel(p.profile_id) })); });
     var nSel = $("in-noise");
     nSel.appendChild(el("option", { value: "off", text: "Off (σ = 0, default)" }));
     nSel.appendChild(el("option", { value: "on", text: "On (σ = " + D.noise_on_sigma + "; Q14 σ = " + 2 * D.noise_on_sigma + ") · P1" }));
@@ -221,7 +204,6 @@ window.IGBT.ui = (function () {
   function backToSetup() {
     stopTimer();
     state.run = null; state.report = null; state.blocked = null; state.view = null;
-    $("fault-banner").hidden = true;
     newRunId(); refreshSetup(); showScreen("screen-setup");
   }
 
@@ -230,7 +212,7 @@ window.IGBT.ui = (function () {
     var body = clear($("custom-body"));
     var defs = D.module_defaults, units = D.module_parameter_units;
     Object.keys(defs).forEach(function (k) {
-      if (k === "module_id") return;
+      if (k === "module_id" || k === "module_note") return;
       var input;
       if (k === "module_note") {
         input = el("span", { class: "fixed", text: defs[k] });
@@ -309,7 +291,7 @@ window.IGBT.ui = (function () {
   function renderBlocked(setup, res) {
     setBadge(res.inputs.profile_id);
     $("blocked-run").textContent = setup.run_id + " · scenario " + setup.scenario_id + " · profile " + res.inputs.profile_id;
-    $("blocked-text").textContent = D.fixed_texts.config_blocked;
+    $("blocked-text").textContent = "No production limits are configured, so the bench was not energised. Not evaluated.";
     $("blocked-label").textContent = D.verdict_labels.NOT_EVALUATED;
     $("blocked-reason").textContent = "block_reason: " + res.block_reason;
     // One report object per blocked run, so the JSON and HTML exports carry the same metadata
@@ -340,7 +322,7 @@ window.IGBT.ui = (function () {
         el("span", { class: "lamp-dot", "aria-hidden": "true" }),
         el("span", { class: "lamp-name", text: il.id + " · " + il.name }),
         el("span", { class: "lamp-state", text: ok ? "OK" : "OPEN" }),
-        el("span", { class: "lamp-src", text: "Demo control: " + il.demo_control })
+        el("span", { class: "lamp-src", text: "Control: " + il.demo_control })
       ]);
       if (IL_TOGGLES[il.id]) {
         var label = IL_TOGGLES[il.id][ok ? 0 : 1];
@@ -401,7 +383,6 @@ window.IGBT.ui = (function () {
   function showRun() {
     var run = state.run;
     $("run-meta").textContent = runMeta(state.setup, run.inputs);
-    $("clock-caption").textContent = D.fixed_texts.clock_caption;
     $("clock-speed").textContent = run.inputs.speed + "×";
     clear($("log-body")); state.logCount = 0; state.focusKey = null;
     $("btn-view-result").disabled = true;
@@ -445,7 +426,6 @@ window.IGBT.ui = (function () {
     var live = run.state === "RUNNING" || run.state === "SAFE_STATE_PROCEDURE";
     ["btn-abort", "btn-door", "btn-heartbeat"].forEach(function (id) { $(id).disabled = !live; });
     $("btn-abort").hidden = SEQ.isTerminal(run);
-    $("fault-banner").hidden = !(run.safe && run.safe.locked && run.state !== "RESET");
   }
 
   function renderStageList(run) {
@@ -517,9 +497,7 @@ window.IGBT.ui = (function () {
       box.appendChild(el("div", { class: "rcard" }, [
         el("div", { class: "rcard-top" }, [el("span", { class: "rcard-label", text: r.quantity_id + " · " + r.label }), verdictChip(r.verdict)]),
         el("p", { class: "rcard-value" }, [valueText(r), u ? el("span", { class: "u", text: u }) : null]),
-        el("p", { class: "rcard-rule", text: "Rule: " + ruleText(r) + " · margin " + marginText(r) + (r.observation !== "OBSERVED" ? " · " + r.observation : "") }),
-        // Provenance (basis, case reference, NOT APPROVED) one click away; the report and Result evidence show it in full
-        el("details", { class: "inline-details rule-details" }, [el("summary", { text: "Rule basis" }), chipsFor(r)])
+        el("p", { class: "rcard-rule", text: "Rule: " + ruleText(r) + " · margin " + marginText(r) + (r.observation !== "OBSERVED" ? " · " + r.observation : "") })
       ]));
     });
     var eqs = st.readings.filter(function (r) { return r.model_equation; }).map(function (r) { return r.model_equation; });
@@ -592,22 +570,16 @@ window.IGBT.ui = (function () {
     var o = det.overall, ss = det.safe_state, box = $("result-outcome");
     if (!box) return;
     var locked = !!ss && ss.final_state === "FAULT_LOCKED";
-    var nFail = REP.text.countsOf(det).readings.FAIL;
-    var kind, title;
-    if (locked) { kind = "oc-benchfault"; title = "Bench fault · safe state not verified"; }
-    else if (o.verdict === "FAIL") { kind = "oc-fail"; title = "Module failed · " + nFail + (nFail === 1 ? " check" : " checks"); }
-    else if (o.verdict === "ABORTED") { kind = "oc-interrupted"; title = "Test interrupted"; }
-    else if (o.verdict === "PASS") { kind = "oc-pass"; title = "All evaluated checks passed"; }
-    else { kind = "oc-incomplete"; title = o.verdict === "INCOMPLETE" ? "Test incomplete" : o.verdict; }
-    box.className = "outcome " + kind;
-    $("result-kind").textContent = title;
-    // Findings first (unresolved safe state, failed checks, interruption, not-run stages), then the counts
-    var d = clear($("result-kind-detail")), f = REP.text.keyFindings(det), c = REP.text.countsText(det);
+    var k = REP.text.outcomeKind(det);   // same headline as report section A
+    box.className = "outcome oc-" + k.kind;
+    if ($("btn-reset-sim")) $("btn-reset-sim").hidden = !locked;
+    $("result-kind").textContent = k.title;
+    // Concise reason: the findings (unresolved safe state, failed checks, stop reason, not-run stages), else the engine's reason
+    var d = clear($("result-kind-detail")), f = REP.text.keyFindings(det);
     if (f.length) d.appendChild(el("ul", { "class": "findings" }, f.map(function (x) {
       return el("li", { "class": "f-" + x.kind }, [el("span", { "class": "f-tag", text: FINDING_TAG[x.kind] }), x.text]);
     })));
-    d.appendChild(el("p", { "class": "oc-counts", text: c.readings }));
-    d.appendChild(el("p", { "class": "oc-counts", text: c.stages }));
+    if (!f.length) d.appendChild(el("p", { "class": "outcome-reason", text: o.precedence_reason + "." }));
     d.hidden = false;
   }
 
@@ -638,7 +610,6 @@ window.IGBT.ui = (function () {
           el("td", { class: "q" }, [el("strong", { text: r.quantity_id }), el("span", { class: "obs", text: r.label })]),
           el("td", null, [valueText(r) + (u && r.value !== null ? " " + u : ""), r.observation !== "OBSERVED" ? el("span", { class: "obs", text: r.observation }) : null]),
           el("td", { text: ruleText(r) }),
-          el("td", { class: "ch" }, [chipsFor(r)]),
           el("td", { text: marginText(r) }),
           el("td", null, [verdictChip(r.verdict)])
         ]));
@@ -673,7 +644,7 @@ window.IGBT.ui = (function () {
         enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") +
           " · " + REP.text.verificationText(ss) }));
         if (ss.final_state === "FAULT_LOCKED") enc.appendChild(el("p", { class: "lockout-note",
-          text: "Access locked out. Use Reset simulation in the red banner." }));
+          text: "Access locked out until the bench is reset." }));
       }
     }
     var dl = clear($("result-safe"));
@@ -692,7 +663,6 @@ window.IGBT.ui = (function () {
 
     $("result-phys").textContent = sec(det.physical_total_s);
     $("result-anim").textContent = sec(rep.presentation.animation_total_s) + " at " + det.inputs.speed + "×";
-    $("result-caption").textContent = rep.presentation.clock_caption;
     var cb = clear($("result-clock-body"));
     det.stages.forEach(function (st) {
       var comps = st.physical_components.map(function (c) { return c.basis + " " + F.num(c.seconds) + " s" + (c.note ? " (" + c.note + ")" : ""); }).join(" + ");
@@ -705,8 +675,8 @@ window.IGBT.ui = (function () {
   function lockNewRun(btn) {
     var locked = !!state.run && state.run.state === "FAULT_LOCKED";
     btn.disabled = locked;
-    btn.hidden = locked;   // not offered while access is locked out; Reset simulation is the only exit
-    btn.title = locked ? "FAULT_LOCKED: use Reset simulation in the red banner" : "";
+    btn.hidden = locked;   // not offered while access is locked out; Reset bench (outcome card) is the only exit
+    btn.title = locked ? "Access locked out: use Reset bench on the outcome" : "";
   }
 
   // ---- Screen 5: Report (02 §11): preview, Print / Save PDF, Download JSON, Download HTML ----
@@ -718,7 +688,7 @@ window.IGBT.ui = (function () {
     var o = rep.deterministic.overall, inp = rep.deterministic.inputs;
     $("report-meta").textContent = rep.metadata.run_id + " · scenario " + inp.scenario_id + " (" + inp.scenario_name + ") · overall " + o.verdict;
     $("report-files").textContent = "Files: " + REP.fileName(rep, "html") + " · " + REP.fileName(rep, "json");
-    $("report-preview").srcdoc = REP.buildHtml(rep);
+    renderAiBar();
     $("btn-report-back").textContent = from === "blocked" ? "Back" : "Back to outcome";
     $("report-print-note").hidden = true;
     lockNewRun($("btn-report-new"));
@@ -736,11 +706,49 @@ window.IGBT.ui = (function () {
       frame.contentWindow.focus();
       frame.contentWindow.print();
     } catch (e) {
-      var url = URL.createObjectURL(new Blob([REP.buildHtml(state.view.report)], { type: "text/html" }));
+      var url = URL.createObjectURL(new Blob([REP.buildHtml(state.view.report, { ai: aiFor(state.view.report) })], { type: "text/html" }));
       window.open(url, "_blank");
       $("report-print-note").hidden = false;
       $("report-print-note").textContent = "The report opened in a new tab. Use the browser's Print there and choose Save as PDF.";
     }
+  }
+
+  // ---- AI analysis (optional; online only) ----
+  // The offline app has no network code. When it is served by the local AI service (ai-explainer/server.mjs),
+  // that service adds a companion script which registers window.IGBT_AI. Generation runs only on an explicit
+  // click; the result is shown and exported in report section B, never mixed into the recorded results, and never
+  // replaced by placeholder text. Errors are shown as errors.
+  function aiFor(rep) { return state.ai && state.ai.report === rep ? state.ai : null; }
+  function aiAvailable() { return !!(window.IGBT_AI && typeof window.IGBT_AI.explain === "function"); }
+  function renderAiBar() {
+    var rep = state.view && state.view.report, bar = $("ai-bar");
+    $("report-preview").srcdoc = REP.buildHtml(rep, { ai: aiFor(rep) });
+    if (!bar) return;
+    var usable = aiAvailable() && state.view.from !== "blocked";
+    bar.hidden = !usable;
+    if (!usable) return;
+    var a = aiFor(rep), busy = !!state.aiBusy;
+    $("btn-ai-generate").disabled = busy;
+    $("btn-ai-generate").textContent = a ? "Regenerate AI analysis" : "Generate AI analysis";
+    var st = $("ai-status");
+    st.className = "muted small" + (state.aiError ? " err" : "");
+    st.textContent = busy ? "Requesting one AI analysis from the local service…" :
+      state.aiError ? state.aiError :
+      a ? "AI analysis added to section B (" + a.model + "). It is included in Save PDF and Download HTML." :
+      "Sends this run’s results to the AI service once. Recorded results are not changed.";
+  }
+  function generateAi() {
+    var rep = state.view && state.view.report;
+    if (!rep || state.aiBusy || !aiAvailable()) return;
+    state.aiBusy = true; state.aiError = null; renderAiBar();
+    window.IGBT_AI.explain(rep).then(function (res) {
+      state.ai = { report: rep, model: res.model, generated_local: REP.localIso(new Date()), summary: res.summary, items: res.items };
+    }, function (err) {
+      state.aiError = "AI analysis failed: " + ((err && err.message) || "no response") + " Nothing was added to the report.";
+    }).then(function () {
+      state.aiBusy = false;
+      if (state.view && state.view.report === rep) renderAiBar();
+    });
   }
 
   function resetSimulation() {
@@ -767,7 +775,8 @@ window.IGBT.ui = (function () {
       $("btn-report-back").addEventListener("click", reportBack);
       $("btn-report-new").addEventListener("click", backToSetup);
       $("btn-report-print").addEventListener("click", printReport);
-      $("btn-report-html").addEventListener("click", function () { if (state.view) REP.downloadHtml(state.view.report); });
+      $("btn-report-html").addEventListener("click", function () { if (state.view) REP.downloadHtml(state.view.report, { ai: aiFor(state.view.report) }); });
+      if ($("btn-ai-generate")) $("btn-ai-generate").addEventListener("click", generateAi);
       $("btn-report-json").addEventListener("click", function () { if (state.view) REP.download(state.view.report); });
       $("btn-reset-sim").addEventListener("click", resetSimulation);
       showScreen("screen-setup");
