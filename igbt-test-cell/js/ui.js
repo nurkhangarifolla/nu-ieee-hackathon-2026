@@ -33,17 +33,30 @@ window.IGBT.ui = (function () {
     return "RUN-" + d.getFullYear() + pad(d.getMonth() + 1, 2) + pad(d.getDate(), 2) + "-" + pad(runCounter, 4);
   }
 
-  // ---- shared chrome: banner, badge, limitations ----
+  // ---- shared chrome: banner, badge, limitations, footer ----
   function renderChrome() {
     $("sim-banner").textContent = D.fixed_texts.banner;
     $("limitations-text").textContent = D.fixed_texts.limitations;
     var legend = $("chip-legend");
     legend.innerHTML = "";
     D.fixed_texts.chip_legend.forEach(function (c) {
-      legend.appendChild(el("li", null, [el("span", { class: "chip", text: c.chip }), " = " + c.meaning]));
+      var cls = "chip" + (c.chip === "NOT APPROVED" ? " chip-na" : "");
+      legend.appendChild(el("li", null, [el("span", { class: cls, text: c.chip }), " = " + c.meaning]));
     });
-    $("open-limitations").addEventListener("click", function () { $("limitations").hidden = false; });
-    $("close-limitations").addEventListener("click", function () { $("limitations").hidden = true; });
+    if ($("footer-text")) $("footer-text").textContent = D.fixed_texts.report_footer;
+    if ($("footer-version")) $("footer-version").textContent = "v" + D.software_version;
+
+    // Limitations: native modal dialog (Escape closes, focus returns); plain toggle where unsupported
+    var dlg = $("limitations"), opener = $("open-limitations");
+    opener.addEventListener("click", function () {
+      if (typeof dlg.showModal === "function") dlg.showModal(); else dlg.setAttribute("open", "");
+    });
+    function closeDialog() {
+      if (typeof dlg.close === "function") dlg.close(); else dlg.removeAttribute("open");
+      opener.focus();
+    }
+    $("close-limitations").addEventListener("click", closeDialog);
+    dlg.addEventListener("click", function (e) { if (e.target === dlg) closeDialog(); });
   }
   function setBadge(profileId) {
     var p = V.findProfile(profileId);
@@ -51,9 +64,24 @@ window.IGBT.ui = (function () {
     b.textContent = p ? p.profile_badge : "";
     b.className = "badge " + (p && p.profile_status === "demo" ? "badge-demo" : "badge-prod");
   }
+  // Workflow strip: which of the five steps (02 §11) a screen belongs to
+  var screenShownOnce = false;
+  var SCREEN_STEP = { "screen-setup": 1, "screen-invalid": 1, "screen-blocked": 1, "screen-ok": 2 };
+  function setStep(n) {
+    Array.prototype.forEach.call(document.querySelectorAll("#workflow-steps li"), function (li) {
+      var s = parseInt(li.getAttribute("data-step"), 10);
+      li.className = s < n ? "done" : "";
+      if (s === n) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+    });
+  }
   function showScreen(id) {
     ["screen-setup", "screen-invalid", "screen-blocked", "screen-ok"].forEach(function (s) { $(s).hidden = s !== id; });
+    if ($("workflow-steps")) setStep(SCREEN_STEP[id] || 1);
     window.scrollTo(0, 0);
+    // Move keyboard / screen-reader focus to the new screen's heading
+    var h = $(id).querySelector("h2[tabindex]");
+    if (h && screenShownOnce) h.focus({ preventScroll: true });
+    screenShownOnce = true;
   }
 
   // ---- Screen 1: Setup ----
@@ -126,14 +154,14 @@ window.IGBT.ui = (function () {
       if (k === "module_note") {
         input = el("span", { class: "fixed", text: defs[k] });
       } else if (typeof defs[k] === "boolean") {
-        input = el("select", { "data-param": k, "data-kind": "bool" }, [el("option", { value: "true", text: "true" }), el("option", { value: "false", text: "false" })]);
+        input = el("select", { "data-param": k, "data-kind": "bool", "aria-label": k }, [el("option", { value: "true", text: "true" }), el("option", { value: "false", text: "false" })]);
         input.value = String(defs[k]);
       } else {
-        input = el("input", { type: "text", "data-param": k, "data-kind": "num", value: String(defs[k]), inputmode: "decimal", size: "10" });
+        input = el("input", { type: "text", "data-param": k, "data-kind": "num", "aria-label": k + " (" + units[k] + ")", value: String(defs[k]), inputmode: "decimal", size: "10", autocomplete: "off", spellcheck: "false" });
       }
       var hint = k === "desat_trip_us" ? "leave empty = never trips (null)" : "";
       body.appendChild(el("tr", null, [
-        el("td", null, [el("code", { text: k })]),
+        el("td", null, [el("code", { text: k, translate: "no" })]),
         el("td", null, [input]),
         el("td", { text: units[k] }),
         el("td", { class: "muted", text: "default " + show(defs[k]) + (hint ? "; " + hint : "") })
@@ -190,9 +218,9 @@ window.IGBT.ui = (function () {
     var body = $("invalid-body");
     body.innerHTML = "";
     errors.forEach(function (e) {
-      body.appendChild(el("tr", null, [el("td", null, [el("code", { text: e.field })]), el("td", null, [el("code", { text: show(e.value) })]), el("td", { text: e.rule })]));
+      body.appendChild(el("tr", null, [el("td", null, [el("code", { text: e.field, translate: "no" })]), el("td", null, [el("code", { text: show(e.value), translate: "no" })]), el("td", { text: e.rule })]));
     });
-    $("invalid-count").textContent = errors.length + (errors.length === 1 ? " invalid input" : " invalid inputs") + ". No run and no verdict.";
+    $("invalid-count").textContent = errors.length + (errors.length === 1 ? " invalid input" : " invalid inputs") + ". No run and no verdict. Go back to setup, fix the values listed below, then press CONTINUE again.";
     showScreen("screen-invalid");
   }
 
