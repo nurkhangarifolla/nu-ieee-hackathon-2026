@@ -67,6 +67,7 @@ window.IGBT.ui = (function () {
     var b = $("profile-badge");
     b.textContent = p ? p.profile_badge : "";
     b.className = "badge " + (p && p.profile_status === "demo" ? "badge-demo" : "badge-prod");
+    if ($("limitations-profile")) $("limitations-profile").textContent = p ? "Profile: " + p.profile_badge : "";
   }
   // Workflow strip: which of the five steps (02 §11) a screen belongs to
   var screenShownOnce = false;
@@ -300,7 +301,7 @@ window.IGBT.ui = (function () {
     errors.forEach(function (e) {
       body.appendChild(el("tr", null, [el("td", null, [el("code", { text: e.field, translate: "no" })]), el("td", null, [el("code", { text: show(e.value), translate: "no" })]), el("td", { text: e.rule })]));
     });
-    $("invalid-count").textContent = errors.length + (errors.length === 1 ? " invalid input" : " invalid inputs") + ". No run and no verdict. Go back to setup, fix the values listed below, then press CONTINUE again.";
+    $("invalid-count").textContent = errors.length + (errors.length === 1 ? " invalid input" : " invalid inputs") + ". No run and no verdict. Go back to setup, fix the values listed below, then press Check readiness again.";
     showScreen("screen-invalid");
   }
 
@@ -352,15 +353,32 @@ window.IGBT.ui = (function () {
     $("btn-start").disabled = !allOk;
     var open = D.interlocks.filter(function (il) { return !run.interlocks[il.id]; }).map(function (il) { return il.id; });
     $("precheck-status").hidden = allOk;
-    $("precheck-status").textContent = allOk ? "" : "START disabled: " + open.join(", ") + " not OK.";
+    $("precheck-status").textContent = allOk ? "" : "Start test unavailable: " + open.map(function (id) {
+      return id + " (" + D.interlocks.filter(function (il) { return il.id === id; })[0].short + ")";
+    }).join(", ") + " not OK.";
     if ($("precheck-ready")) {
       $("precheck-ready").hidden = !allOk;
-      $("precheck-ready").textContent = allOk ? "Configuration valid · all " + D.interlocks.length + " interlocks OK · ready to start" : "";
+      $("precheck-ready").textContent = allOk ? "Ready to start" : "";
     }
+    // Readiness summary (display only; follows the interlock states). Module connected = fixture/DUT (IL4) and
+    // fibre link (IL5); bench ready = every other interlock.
+    var MODULE_IL = ["IL4", "IL5"];
+    function summary(rowId, ids, okText, noText) {
+      var row = $(rowId);
+      if (!row) return;
+      var bad = ids.filter(function (id) { return !run.interlocks[id]; });
+      row.className = "rd " + (bad.length ? "no" : "ok");
+      row.querySelector(".rd-state").textContent = bad.length ? noText : okText;
+      row.querySelector(".rd-src").textContent = bad.length ? bad.join(", ") + " open" : ids.join(", ") + " OK";
+    }
+    summary("ready-module", MODULE_IL, "Connected", "Not connected");
+    summary("ready-bench", D.interlocks.map(function (il) { return il.id; }).filter(function (id) { return MODULE_IL.indexOf(id) < 0; }), "Ready", "Not ready");
+    if ($("interlock-sum")) $("interlock-sum").textContent = open.length ? open.length + " open" : "all " + D.interlocks.length + " OK";
+    if ($("precheck-interlocks") && open.length) $("precheck-interlocks").open = true;
   }
   function onStart() {
     var res = SEQ.start(state.run);
-    if (!res.ok) { $("precheck-status").hidden = false; $("precheck-status").textContent = "START refused: " + res.reason + "."; return; }
+    if (!res.ok) { $("precheck-status").hidden = false; $("precheck-status").textContent = "Start refused: " + res.reason + "."; return; }
     showRun();
   }
 
@@ -401,12 +419,22 @@ window.IGBT.ui = (function () {
   }
 
   var STATE_CLASS = { RUNNING: "st st-run", SAFE_STATE_PROCEDURE: "st st-warn", SAFE: "st st-pass", FAULT_LOCKED: "st st-lock", ENDED: "st", RESET: "st" };
+  // Operator wording for the run state (display only; the JSON keeps the state names)
+  var STATE_TEXT = { RUNNING: "Testing", SAFE_STATE_PROCEDURE: "Making safe", SAFE: "Safe", FAULT_LOCKED: "Fault · locked", ENDED: "Ended", RESET: "Reset" };
   function renderRun() {
     var run = state.run;
     if (!run) return;
     var rs = $("run-state");
-    rs.textContent = run.state.replace(/_/g, " ");
+    rs.textContent = STATE_TEXT[run.state] || run.state.replace(/_/g, " ");
     rs.className = STATE_CLASS[run.state] || "st";
+    // Enclosure and access state, always visible during the run (display only, from the bench state)
+    var enc = $("run-enclosure"), bb = SEQ.bench(run);
+    if (enc) {
+      var lockout = run.state === "FAULT_LOCKED";
+      enc.className = "enc-pill " + (lockout ? "lockout" : bb.door_locked ? "locked" : "unlocked");
+      enc.textContent = lockout ? "Enclosure locked · access locked out" :
+        bb.door_locked ? "Enclosure locked · bus " + F.fixed(bb.v_bus_v, 0) + " V" : "Enclosure unlocked";
+    }
     $("clock-phys").textContent = sec(run.t);
     $("clock-anim").textContent = sec(run.t / run.inputs.speed);
     renderStageList(run);
@@ -416,6 +444,7 @@ window.IGBT.ui = (function () {
     renderLog(run);
     var live = run.state === "RUNNING" || run.state === "SAFE_STATE_PROCEDURE";
     ["btn-abort", "btn-door", "btn-heartbeat"].forEach(function (id) { $(id).disabled = !live; });
+    $("btn-abort").hidden = SEQ.isTerminal(run);
     $("fault-banner").hidden = !(run.safe && run.safe.locked && run.state !== "RESET");
   }
 
@@ -448,21 +477,20 @@ window.IGBT.ui = (function () {
     var box = clear($("active-stage")), st = SEQ.activeStage(run), prog = SEQ.stageProgress(run);
     if (!st) {
       var o = run.overall;
-      box.appendChild(el("p", { class: "active-name", text: run.state === "PRECHECK" ? "Not started" : "Run finished · final state " + run.state.replace(/_/g, " ") }));
-      if (o) box.appendChild(el("p", { class: "active-meta", text: "Overall " + o.verdict + " · " + o.verdict_label }));
+      box.appendChild(el("p", { class: "active-name", text: run.state === "PRECHECK" ? "Not started" : "Test finished · " + (STATE_TEXT[run.state] || run.state) }));
+      if (o) box.appendChild(el("p", { class: "active-meta", text: "Review the outcome for the result." }));
       return;
     }
-    var def = E.stageDef(st.test_id);
+    // Stage class and excitation stay in the stage list and report; here only the check and its note
     box.appendChild(el("p", { class: "active-name", text: st.test_id + " · " + st.name }));
-    box.appendChild(el("p", { class: "active-meta", text: st["class"] + " · " + def.excitation + (prog !== null ? " · " + Math.round(prog * 100) + "%" : "") +
-      (st.status_note ? " · " + st.status_note : "") }));
+    if (st.status_note) box.appendChild(el("p", { class: "active-meta", text: st.status_note }));
     // Display only: where this test sits in the sequence, with the stage's own progress
     var idx = run.stages.indexOf(st) + 1;
     var pc = prog === null ? 0 : Math.round(prog * 100);
     var bar = el("div", { class: "progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pc),
       "aria-label": st.test_id + " progress" }, [el("span")]);
     bar.firstChild.style.width = pc + "%";
-    box.appendChild(el("div", { class: "active-progress" }, [el("span", { class: "k", text: "Test " + idx + " of " + run.stages.length }), bar]));
+    box.appendChild(el("div", { class: "active-progress" }, [el("span", { class: "k", text: "Check " + idx + " of " + run.stages.length + " · " + pc + "%" }), bar]));
   }
 
   // Readings card: the active stage once it has readings (T10 after SS3), else the last DONE stage with readings
@@ -481,7 +509,7 @@ window.IGBT.ui = (function () {
     state.focusKey = key;
     var box = clear($("reading-cards")), eq = $("equation");
     // Say whose readings these are: the running test's own, or the last completed test's
-    if ($("readings-kind")) $("readings-kind").textContent = fromActive ? "Readings from the active test" : "Latest completed readings";
+    if ($("readings-kind")) $("readings-kind").textContent = fromActive ? "Readings from this check" : "Last completed check";
     $("readings-of").textContent = st ? "· " + st.test_id + " " + st.name : "";
     if (!st) { box.appendChild(el("p", { class: "empty", text: "No readings yet. Readings appear when a stage with module readings completes." })); eq.hidden = true; return; }
     st.readings.forEach(function (r) {
@@ -490,7 +518,8 @@ window.IGBT.ui = (function () {
         el("div", { class: "rcard-top" }, [el("span", { class: "rcard-label", text: r.quantity_id + " · " + r.label }), verdictChip(r.verdict)]),
         el("p", { class: "rcard-value" }, [valueText(r), u ? el("span", { class: "u", text: u }) : null]),
         el("p", { class: "rcard-rule", text: "Rule: " + ruleText(r) + " · margin " + marginText(r) + (r.observation !== "OBSERVED" ? " · " + r.observation : "") }),
-        chipsFor(r)
+        // Provenance (basis, case reference, NOT APPROVED) one click away; the report and Result evidence show it in full
+        el("details", { class: "inline-details rule-details" }, [el("summary", { text: "Rule basis" }), chipsFor(r)])
       ]));
     });
     var eqs = st.readings.filter(function (r) { return r.model_equation; }).map(function (r) { return r.model_equation; });
@@ -555,6 +584,51 @@ window.IGBT.ui = (function () {
   }
 
   // ---- Screen 4: Result ----
+  // Outcome kind for the operator (display only; derived from the engine's overall verdict, abort reason and
+  // safe-state record, never from the scenario): passed, module failed, interrupted, bench fault, incomplete.
+  function abortText(reason) {
+    if (reason === "OPERATOR") return "Stopped by the operator.";
+    if (reason === "WATCHDOG") return "Controller heartbeat lost; the bench stopped the test.";
+    var il = D.interlocks.filter(function (x) { return x.id + "_OPEN" === reason; })[0];
+    if (il) return "Interlock " + il.id + " opened (" + il.short + "); the bench stopped the test.";
+    return reason ? "Stopped: " + reason + "." : "";
+  }
+  function renderOutcomeKind(det) {
+    var o = det.overall, ss = det.safe_state, box = $("result-outcome");
+    if (!box) return;
+    var locked = !!ss && ss.final_state === "FAULT_LOCKED";
+    var kind, title, detail = null;
+    if (locked) {
+      kind = "oc-benchfault"; title = "Bench fault";
+      detail = el("p", null, [ss.verification === "VERIFICATION_UNAVAILABLE"
+        ? "The discharge could not be verified (verification meter unavailable). The enclosure stays locked."
+        : "The bus did not discharge to a safe level. The enclosure stays locked."]);
+    } else if (o.verdict === "FAIL") {
+      var fails = [];
+      det.stages.forEach(function (st) { st.readings.forEach(function (r) { if (r.verdict === "FAIL") fails.push(r); }); });
+      kind = "oc-fail"; title = "Module failed";
+      detail = el("div", null, [
+        fails.length + (fails.length === 1 ? " check failed:" : " checks failed:"),
+        el("ul", null, fails.map(function (r) {
+          var u = unitOf(r);
+          return el("li", { text: r.label + ": " + valueText(r) + (u && r.value !== null ? " " + u : "") + " (rule " + ruleText(r) + ")" });
+        }))
+      ]);
+    } else if (o.verdict === "ABORTED") {
+      kind = "oc-interrupted"; title = "Test interrupted";
+      detail = el("p", null, [abortText(o.abort_reason) + " No module verdict."]);
+    } else if (o.verdict === "PASS") {
+      kind = "oc-pass"; title = "All checks passed";
+    } else {
+      kind = "oc-incomplete"; title = o.verdict === "INCOMPLETE" ? "Test incomplete" : o.verdict;
+    }
+    box.className = "outcome " + kind;
+    $("result-kind").textContent = title;
+    var d = clear($("result-kind-detail"));
+    if (detail) d.appendChild(detail);
+    d.hidden = !detail;
+  }
+
   var VERDICT_CLASS = { PASS: "verdict verdict-pass", FAIL: "verdict verdict-fail", ABORTED: "verdict verdict-abort", INCOMPLETE: "verdict verdict-abort", "NOT EVALUATED": "verdict verdict-ne" };
   function showResult() {
     var rep = state.report, det = rep.deterministic, o = det.overall;
@@ -565,7 +639,8 @@ window.IGBT.ui = (function () {
     var v = $("result-verdict");
     v.textContent = o.verdict; v.className = VERDICT_CLASS[o.verdict] || "verdict verdict-ne";
     $("result-label").textContent = o.verdict_label;
-    $("result-precedence").textContent = "Precedence: " + o.precedence_reason;
+    $("result-precedence").textContent = "Why: " + o.precedence_reason;
+    renderOutcomeKind(det);
     var reasons = [];
     if (o.block_reason) reasons.push("block_reason: " + o.block_reason);
     if (o.abort_reason) reasons.push("abort_reason: " + o.abort_reason);
@@ -616,6 +691,8 @@ window.IGBT.ui = (function () {
         var measured = ss.verification !== "VERIFICATION_UNAVAILABLE" && ss.v_bus_at_verification_v !== null && ss.v_bus_at_verification_v !== undefined;
         enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") + " · verification " + ss.verification +
           (measured ? " · bus at verification " + F.fixed(ss.v_bus_at_verification_v, 2) + " V" : "") }));
+        if (ss.final_state === "FAULT_LOCKED") enc.appendChild(el("p", { class: "lockout-note",
+          text: "Access locked out. Use Reset simulation in the red banner." }));
       }
     }
     var dl = clear($("result-safe"));
@@ -662,7 +739,7 @@ window.IGBT.ui = (function () {
     $("report-meta").textContent = rep.metadata.run_id + " · scenario " + inp.scenario_id + " (" + inp.scenario_name + ") · overall " + o.verdict;
     $("report-files").textContent = "Files: " + REP.fileName(rep, "html") + " · " + REP.fileName(rep, "json");
     $("report-preview").srcdoc = REP.buildHtml(rep);
-    $("btn-report-back").textContent = from === "blocked" ? "Back" : "Back to result";
+    $("btn-report-back").textContent = from === "blocked" ? "Back" : "Back to outcome";
     $("report-print-note").hidden = true;
     lockNewRun($("btn-report-new"));
     showScreen("screen-report");
