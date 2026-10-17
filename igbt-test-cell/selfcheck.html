@@ -18,8 +18,8 @@
 <body>
 <div id="sim-banner"></div>
 <main>
-  <h1>Self-check: validation, configuration preflight and S0 engine</h1>
-  <p>Runs in this browser with the same scripts as <code>index.html</code>.</p>
+  <h1>Self-check: validation, preflight, engine vs 03 §12, and reports</h1>
+  <p>Runs in this browser with the same scripts as <code>index.html</code>. The same checks run in node with <code>node dev/selfcheck-node.js</code>.</p>
   <div id="total"></div>
   <table><thead><tr><th>#</th><th>Case</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
 </main>
@@ -246,6 +246,211 @@ window.IGBT.selfcheck = (function () {
     return { pass: !!ok, detail: d.overall.verdict + " · " + d.overall.block_reason + " · " + d.events.length + " event(s)" };
   });
 
+  // ---- 03 §12 expected outcomes (TICKET 03). Expected values live here only, never on the app's code path. ----
+  // Stage outcome: "PASS" / "FAIL" = DONE with every required reading PASS / a required FAIL;
+  // "DONE" = DONE whatever the readings (03 §12 says only "DONE"); otherwise the status itself.
+  function stages12(over) {
+    var o = { T00: "PASS", T01: "PASS", T02: "PASS", T03: "PASS", T06: "NOT_APPLICABLE", T04: "PASS", T05: "PASS",
+              T07: "PASS", T08a: "PASS", T08b: "NOT_MODELLED", T09: "PASS", T10: "PASS" };
+    for (var k in (over || {})) o[k] = over[k];
+    return o;
+  }
+  var SAFE_AS_S0 = { trigger: "NORMAL_COMPLETION", v0: 600, discharge: 24.85, verified_v: 40.94, verification: "VERIFIED", door: "UNLOCKED", final: "SAFE" };
+  var S12 = {
+    S0: { stages: stages12(), values: S0_VALUES.map(function (p) { return [p[0], p[1], p[0] === "Q16" ? "INFO" : "PASS"]; }),
+          safe: SAFE_AS_S0, verdict: "PASS", reason: null, label: "PASS", physical: 499.85 },
+    S1: { stages: stages12({ T01: "FAIL", T05: "BLOCKED", T07: "BLOCKED", T08a: "BLOCKED", T09: "BLOCKED", T10: "DONE" }),
+          values: [["Q01", 0.0, "FAIL"], ["Q02", false, "FAIL"], ["Q18", -15.0, "PASS"]],
+          safe: { trigger: "NORMAL_COMPLETION", v0: 0, discharge: "NOT_REQUIRED", verified_v: 0, verification: "VERIFIED", door: "UNLOCKED", final: "SAFE" },
+          verdict: "FAIL", reason: null, label: "FAIL", physical: 280 },
+    S2: { stages: stages12({ T05: "FAIL" }), values: [["Q09", 3.40, "FAIL", -0.20]],
+          safe: SAFE_AS_S0, verdict: "FAIL", reason: null, label: "FAIL", physical: 499.85 },
+    S3: { stages: stages12({ T09: "FAIL" }), values: [["Q14", 18.0, "FAIL"]],
+          safe: SAFE_AS_S0, verdict: "FAIL", reason: null, label: "FAIL", physical: 499.85 },
+    S4: { stages: stages12({ T08a: "INTERRUPTED", T09: "NOT_RUN", T10: "DONE" }), values: [["Q18", -15.0, "PASS"]], abort_at: 365.0,
+          safe: { trigger: "ABORT", v0: 600, discharge: 24.85, verified_v: 40.94, verification: "VERIFIED", door: "UNLOCKED", final: "SAFE" },
+          verdict: "ABORTED", reason: "IL1_OPEN", label: "ABORTED", physical: 409.85 },
+    S5: { stages: stages12({ T00: "NOT_RUN", T01: "NOT_RUN", T02: "NOT_RUN", T03: "NOT_RUN", T06: "NOT_RUN", T04: "NOT_RUN", T05: "NOT_RUN",
+                             T07: "NOT_RUN", T08a: "NOT_RUN", T08b: "NOT_RUN", T09: "NOT_RUN", T10: "NOT_RUN" }), values: [],
+          safe: null, verdict: "NOT EVALUATED", reason: "CONFIGURATION_PREFLIGHT", label: "NOT_EVALUATED", physical: 0 },
+    S8: { stages: stages12({ T10: "DONE" }), values: [["Q18", -15.0, "PASS"]], timeout_s: 120,
+          safe: { trigger: "NORMAL_COMPLETION", v0: 600, discharge: "NO_DECAY", verified_v: 600, verification: "DISCHARGE_FAILED", door: "LOCKED", final: "FAULT_LOCKED" },
+          verdict: "ABORTED", reason: "SAFE_STATE_NOT_VERIFIED", label: "ABORTED_SAFE_STATE", physical: 595 }
+  };
+  var S12_IDS = ["S0", "S1", "S2", "S3", "S4", "S5", "S8"];
+
+  // One report per scenario: a run to the end, or the CONFIG_BLOCKED report
+  function reportFor(id) {
+    var pre = V.configPreflight(setup({ scenario_id: id }));
+    if (pre.status === "CONFIG_BLOCKED") return REP.buildConfigBlockedJson(pre, { run_id: "RUN-SELFCHECK", operator: "selfcheck" });
+    return REP.buildJson(SEQ.runToEnd(SEQ.create(pre)), { run_id: "RUN-SELFCHECK", operator: "selfcheck" });
+  }
+  var repCache = {};
+  function rep(id) { if (!repCache[id]) repCache[id] = reportFor(id); return repCache[id]; }
+  function readingIn(d, q) {
+    var hit = null;
+    d.stages.forEach(function (s) { s.readings.forEach(function (r) { if (r.quantity_id === q) hit = r; }); });
+    return hit;
+  }
+  function outcome(s) {
+    if (s.status !== "DONE") return s.status;
+    return s.readings.some(function (r) { return r.required && r.verdict === "FAIL"; }) ? "FAIL" : "PASS";
+  }
+  function T() { return REP.text; }
+
+  // AC-11 rows: scenario, column, expected, actual, match (also printed by dev/selfcheck-node.js)
+  function s12Rows(id) {
+    var x = S12[id], d = rep(id).deterministic, rows = [];
+    // Stage outcomes
+    var exp = [], act = [], ok = true;
+    d.stages.forEach(function (s) {
+      var want = x.stages[s.test_id], got = outcome(s);
+      var match = want === "DONE" ? s.status === "DONE" : want === got;
+      if (!match) ok = false;
+      exp.push(s.test_id + " " + want); act.push(s.test_id + " " + (want === "DONE" && match ? "DONE" : got));
+    });
+    rows.push({ column: "Stage outcomes", expected: exp.join(" · "), actual: act.join(" · "), pass: ok && d.stages.length === 12 });
+    // Key values (stored value and verdict; margin where 03 §12 gives one)
+    exp = []; act = []; ok = true;
+    x.values.forEach(function (v) {
+      var r = readingIn(d, v[0]);
+      var u = r && T().unitOf(r) ? " " + T().unitOf(r) : "";
+      exp.push(v[0] + " " + JSON.stringify(v[1]) + " " + v[2] + (v[3] !== undefined ? " margin " + v[3] : ""));
+      if (!r) { ok = false; act.push(v[0] + " missing"); return; }
+      act.push(v[0] + " " + T().valueText(r) + u + " " + r.verdict + (v[3] !== undefined ? " margin " + T().marginText(r) : ""));
+      if (r.value !== v[1] || r.verdict !== v[2] || (v[3] !== undefined && r.margin !== v[3])) ok = false;
+    });
+    if (x.abort_at !== undefined) {
+      var ab = ev(d, "ABORT_TRIGGER");
+      exp.push("abort at " + x.abort_at.toFixed(1) + " s");
+      act.push(ab.length === 1 ? "abort at " + ab[0].physical_time_s.toFixed(1) + " s (" + ab[0].stage + ")" : ab.length + " ABORT_TRIGGER");
+      if (ab.length !== 1 || ab[0].physical_time_s !== x.abort_at) ok = false;
+    }
+    rows.push({ column: "Key values", expected: exp.join(" · ") || "–", actual: act.join(" · ") || "–", pass: ok });
+    // Safe state
+    var ss = d.safe_state, w = x.safe;
+    if (!w) rows.push({ column: "Safe state", expected: "null", actual: JSON.stringify(ss), pass: ss === null });
+    else {
+      var dis = ss ? (ss.discharge_required ? (ss.discharge_time_s === null ? "NO_DECAY" : ss.discharge_time_s) : "NOT_REQUIRED") : null;
+      var gotS = ss ? [ss.trigger, "v0 " + ss.v_bus_at_start_v + " V", "discharge " + dis, "verified " + ss.v_bus_at_verification_v + " V", ss.verification, "door " + ss.door, ss.final_state].join(" · ") : "null";
+      var wantS = [w.trigger, "v0 " + w.v0 + " V", "discharge " + w.discharge, "verified " + w.verified_v + " V", w.verification, "door " + w.door, w.final].join(" · ");
+      var okS = gotS === wantS;
+      if (w.discharge === "NOT_REQUIRED") okS = okS && ev(d, "DISCHARGE_NOT_REQUIRED").length === 1 && ev(d, "DISCHARGE_START").length === 0;
+      if (x.timeout_s !== undefined) {
+        var ds = ev(d, "DISCHARGE_START")[0], df = ev(d, "DISCHARGE_FAILED")[0];
+        var span = ds && df ? window.IGBT.engine.r2(df.physical_time_s - ds.physical_time_s) : null;
+        wantS += " · DISCHARGE_FAILED after " + x.timeout_s + " s";
+        gotS += " · DISCHARGE_FAILED after " + span + " s";
+        okS = okS && span === x.timeout_s;
+      }
+      rows.push({ column: "Safe state", expected: wantS, actual: gotS, pass: okS });
+    }
+    // Overall
+    var o = d.overall, why = o.abort_reason || o.block_reason;
+    rows.push({ column: "Overall", expected: x.verdict + (x.reason ? " (" + x.reason + ")" : "") + " · 05 §8 label", actual: o.verdict + (why ? " (" + why + ")" : "") + " · " + o.verdict_label,
+                pass: o.verdict === x.verdict && why === x.reason && o.verdict_label === D.verdict_labels[x.label] && o.is_acceptance_decision === false });
+    rows.push({ column: "Physical", expected: x.physical + " s", actual: d.physical_total_s + " s", pass: d.physical_total_s === x.physical });
+    rows.forEach(function (r) { r.scenario = id; });
+    return rows;
+  }
+  function s12Table() {
+    var all = [];
+    S12_IDS.forEach(function (id) { all = all.concat(s12Rows(id)); });
+    return all;
+  }
+  S12_IDS.forEach(function (id) {
+    ["Stage outcomes", "Key values", "Safe state", "Overall", "Physical"].forEach(function (col, i) {
+      add("03 §12 " + id + " · " + col, function () {
+        var r = s12Rows(id)[i];
+        return { pass: r.pass, detail: "expected " + r.expected + " | actual " + r.actual };
+      });
+    });
+  });
+
+  // AC-02 for every §12 scenario: two runs, byte-identical deterministic sections
+  S12_IDS.forEach(function (id) {
+    add("AC-02 " + id + " two runs give byte-identical deterministic sections", function () {
+      var a = JSON.stringify(reportFor(id).deterministic), b = JSON.stringify(reportFor(id).deterministic);
+      return { pass: a === b, detail: a === b ? "identical (" + a.length + " characters)" : "differ" };
+    });
+  });
+  // AC-12 for every §12 scenario: at most one DISCHARGE_START; the door unlocks only after DISCHARGE_VERIFIED
+  S12_IDS.forEach(function (id) {
+    add("AC-12 " + id + " ≤ 1 DISCHARGE_START; DOOR_UNLOCKED only after DISCHARGE_VERIFIED", function () {
+      var d = rep(id).deterministic, ds = ev(d, "DISCHARGE_START").length, v = ev(d, "DISCHARGE_VERIFIED"), u = ev(d, "DOOR_UNLOCKED");
+      var ok = ds <= 1 && ev(d, "SAFE_STATE_START").length <= 1 && (u.length === 0 || (v.length === 1 && u.length === 1 && u[0].seq > v[0].seq));
+      return { pass: ok, detail: ds + " DISCHARGE_START; " + v.length + " DISCHARGE_VERIFIED; " + u.length + " DOOR_UNLOCKED" };
+    });
+  });
+
+  add("AC-04 S1: BLOCKED stages carry reasons; no bus charge or discharge events; not PASS", function () {
+    var d = rep("S1").deterministic;
+    var blocked = d.stages.filter(function (s) { return s.status === "BLOCKED"; });
+    var noReason = blocked.filter(function (s) { return !s.blocked_reason; });
+    var bus = ["BUS_CHARGE_START", "BUS_AT_SETPOINT", "DISCHARGE_START"].filter(function (t) { return ev(d, t).length; });
+    var ok = blocked.length === 4 && !noReason.length && ev(d, "PREREQUISITE_BLOCK").length === 4 && !bus.length && d.overall.verdict !== "PASS";
+    return { pass: ok, detail: blocked.map(function (s) { return s.test_id + ": " + s.blocked_reason; }).join(" · ") + "; bus events: " + (bus.join(", ") || "none") + "; overall " + d.overall.verdict };
+  });
+  add("AC-04 S4: full safe-state event sequence (SS1–SS9) after the abort, in order; not PASS", function () {
+    var d = rep("S4").deterministic;
+    var want = ["ABORT_TRIGGER", "SAFE_STATE_START", "GATE_OFF_COMMANDED", "GATE_OFF_CONFIRMED", "HV_SOURCE_DISABLED", "CONTACTOR_OPEN", "DISCHARGE_START", "DISCHARGE_VERIFIED", "DOOR_UNLOCKED"];
+    var got = d.events.filter(function (e) { return want.indexOf(e.type) >= 0; }).map(function (e) { return e.type; });
+    return { pass: eq(got, want) && d.overall.verdict !== "PASS" && d.safe_state.trigger === "ABORT", detail: got.join(" → ") + "; overall " + d.overall.verdict };
+  });
+  add("AC-05 S5: no stage executed, no bus events, NOT EVALUATED + block_reason; label differs from INCOMPLETE", function () {
+    var d = rep("S5").deterministic, o = d.overall;
+    var executed = ev(d, "STAGE_START").length + ev(d, "RUN_START").length;
+    var bus = ev(d, "BUS_CHARGE_START").length + ev(d, "DISCHARGE_START").length + ev(d, "SAFE_STATE_START").length;
+    var ok = !executed && !bus && o.verdict === "NOT EVALUATED" && o.block_reason === "CONFIGURATION_PREFLIGHT" && o.abort_reason === null &&
+      o.verdict_label === D.verdict_labels.NOT_EVALUATED && o.verdict_label !== D.verdict_labels.INCOMPLETE && d.safe_state === null;
+    return { pass: ok, detail: o.verdict + " · " + o.block_reason + " · " + o.verdict_label };
+  });
+  add("AC-13 S8: door LOCKED, FAULT_LOCKED (never SAFE / DOOR_UNLOCKED), overall ABORTED, report exportable", function () {
+    var r = rep("S8"), d = r.deterministic, ss = d.safe_state, html = REP.buildHtml(r);
+    var parsed = JSON.parse(REP.serialise(r));
+    var ok = ss.door === "LOCKED" && ss.final_state === "FAULT_LOCKED" && ev(d, "DOOR_UNLOCKED").length === 0 && ev(d, "FAULT_LOCKED").length === 1 &&
+      d.overall.verdict === "ABORTED" && d.overall.abort_reason === "SAFE_STATE_NOT_VERIFIED" && parsed.simulation === true &&
+      html.indexOf("<p class=\"lock\">" + D.fixed_texts.fault_locked_banner + "</p>") >= 0;
+    return { pass: ok, detail: "door " + ss.door + " · " + ss.final_state + " · " + d.overall.verdict + " (" + d.overall.abort_reason + ") · JSON and HTML build" };
+  });
+
+  // ---- HTML report checks (05 §10; AC-06, AC-07, AC-08) ----
+  function htmlEsc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function rowHtml(html, re) { var m = html.match(re); return m ? m[0] : null; }
+  S12_IDS.forEach(function (id) {
+    add("HTML " + id + ": banner, footer, limitations, chip legend; no script, no URL", function () {
+      var html = REP.buildHtml(rep(id)), miss = [];
+      [D.fixed_texts.banner, D.fixed_texts.report_footer, D.fixed_texts.limitations, D.fixed_texts.clock_caption].forEach(function (t) { if (html.indexOf(htmlEsc(t)) < 0) miss.push(t.slice(0, 24) + "…"); });
+      D.fixed_texts.chip_legend.forEach(function (c) { if (html.indexOf(htmlEsc(c.chip)) < 0 || html.indexOf(htmlEsc(c.meaning)) < 0) miss.push(c.chip); });
+      var bad = /<script/i.test(html) || /https?:/i.test(html) || /\bsrc=/i.test(html);
+      return { pass: !miss.length && !bad, detail: (miss.length ? "missing: " + miss.join(", ") : "all fixed texts present") + (bad ? "; script/URL found" : "; no script, no URL") + "; " + html.length + " characters" };
+    });
+    add("AC-06 " + id + ": every JSON stage and reading has an HTML row with the same ID, status, value, verdict and chips", function () {
+      var r = rep(id), html = REP.buildHtml(r), bad = [], n = 0;
+      r.deterministic.stages.forEach(function (s) {
+        if (html.indexOf("data-stage=\"" + s.test_id + "\" data-status=\"" + s.status + "\"") < 0) bad.push(s.test_id + " status");
+        s.readings.forEach(function (x) {
+          n++;
+          var tr = rowHtml(html, new RegExp("<tr class=\"rd(?: nr)?\" data-q=\"" + x.quantity_id + "\" data-verdict=\"" + x.verdict + "\">.*?</tr>"));
+          if (!tr) { bad.push(x.quantity_id + " row/verdict"); return; }
+          if (tr.indexOf("<td class=\"v num\">" + htmlEsc(T().valueText(x)) + "</td>") < 0) bad.push(x.quantity_id + " value");
+          T().chipTexts(x).forEach(function (c) { if (tr.indexOf(">" + htmlEsc(c) + "</span>") < 0) bad.push(x.quantity_id + " chip " + c); });
+          if (html.indexOf(htmlEsc(x.reason)) < 0) bad.push(x.quantity_id + " reason");
+        });
+      });
+      return { pass: !bad.length && n > 0, detail: bad.length ? "mismatch: " + bad.join(", ") : n + " readings and " + r.deterministic.stages.length + " stages agree" };
+    });
+    add("AC-08 " + id + ": every event row shows physical and animation time = physical / speed", function () {
+      var r = rep(id), html = REP.buildHtml(r), sp = r.deterministic.inputs.speed, F = window.IGBT.models.fmt, bad = [];
+      r.deterministic.events.forEach(function (e) {
+        var tr = rowHtml(html, new RegExp("<tr( class=\"[^\"]*\")? data-seq=\"" + e.seq + "\">.*?</tr>"));
+        var want = "<td class=\"num\">" + F.fixed(e.physical_time_s, 2) + "</td><td class=\"num\">" + F.fixed(e.physical_time_s / sp, 2) + "</td>";
+        if (!tr || tr.indexOf(want) < 0) bad.push(e.seq);
+      });
+      return { pass: !bad.length, detail: bad.length ? "wrong rows: " + bad.join(", ") : r.deterministic.events.length + " events at speed " + sp };
+    });
+  });
+
   function run() {
     return cases.map(function (c, i) {
       var r;
@@ -253,7 +458,7 @@ window.IGBT.selfcheck = (function () {
       return { n: i + 1, name: c.name, result: r.pass ? "PASS" : "FAIL", detail: r.detail };
     });
   }
-  return { run: run };
+  return { run: run, s12Table: s12Table };
 })();
 
 if (typeof document !== "undefined" && document.getElementById("rows")) {

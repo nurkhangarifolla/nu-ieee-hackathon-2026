@@ -24,3 +24,4 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]]
 | 2026-10-17 | Abort followed by an unverified safe state: `abort_reason` = the trigger, label = "safe state not verified; enclosure kept locked" | 05 §7 allows one abort reason; the locked enclosure is the stronger message. Only reachable by aborting S8 by hand | Pending Said |
 | 2026-10-17 | Failed discharge: `discharge_time_s` = null, T10 COMPUTED part = `discharge_timeout_s` | The bus never reached v_safe; 03 §7 and §12 (S8 595 s) count the timeout | Pending Said |
 | 2026-10-17 | Engine (σ = 0) reproduces every 03 §12 row, S0 through S10; no discrepancy to report | Checked with `node dev/run-node.js` per scenario; S1–S8 are formally TICKET 03 | Info |
+| 2026-10-17 | TICKET 03: S0, S1, S2, S3, S4, S5, S8 match every 03 §12 cell (AC-11 table from `node dev/selfcheck-node.js`, 133/133 checks) | Engine unchanged since TICKET 02; no discrepancy to report | Info |

@@ -274,6 +274,10 @@
   .hyp { margin:0; padding-left:var(--s-lg); }
   .hyp li { margin:0 0 var(--s-sm); }
 
+  /* Report preview */
+  .preview-wrap { margin-top:var(--s-xl); border:1px solid var(--hairline-strong); border-radius:var(--r-sm); background:var(--canvas); }
+  .preview { display:block; width:100%; height:min(72vh, 900px); border:0; }
+
   [hidden] { display:none !important; }
 
   @media (max-width:900px) {
@@ -388,6 +392,7 @@
     <div class="actions">
       <button type="button" class="btn-back">Back to setup</button>
       <button type="button" id="btn-export-blocked">Download JSON</button>
+      <button type="button" class="primary" id="btn-blocked-report">View report</button>
     </div>
   </section>
 
@@ -518,7 +523,28 @@
 
     <div class="actions">
       <button type="button" id="btn-result-new">New run</button>
-      <button type="button" class="primary" id="btn-download-json">Download JSON</button>
+      <button type="button" id="btn-download-json">Download JSON</button>
+      <button type="button" class="primary" id="btn-view-report">VIEW REPORT</button>
+    </div>
+  </section>
+
+  <!-- Screen 5: Report -->
+  <section id="screen-report" class="screen" aria-labelledby="h-report" hidden>
+    <p class="eyebrow">Screen 5 · Step 5 of 5</p>
+    <h2 id="h-report" tabindex="-1">Report</h2>
+    <div class="meta" id="report-meta"></div>
+    <p class="muted lead">Preview of the HTML report (05 §10). Print / Save PDF prints this report only; choose “Save as PDF” in the print dialog. The banner and footer repeat on every printed page.</p>
+    <div class="preview-wrap">
+      <iframe id="report-preview" class="preview" title="HTML report preview"></iframe>
+    </div>
+    <p class="muted small" id="report-files"></p>
+    <p class="alert alert-warn" id="report-print-note" role="status" hidden></p>
+    <div class="actions">
+      <button type="button" id="btn-report-back">Back to result</button>
+      <button type="button" id="btn-report-new">New run</button>
+      <button type="button" id="btn-report-json">Download JSON</button>
+      <button type="button" id="btn-report-html">Download HTML</button>
+      <button type="button" class="primary" id="btn-report-print">Print / Save PDF</button>
     </div>
   </section>
 </main>

@@ -1,12 +1,12 @@
 /* ui.js: rendering and controls. Banner, profile badge, Limitations, Setup (Screen 1),
    Validation error (1a), Configuration blocked (1b), Pre-check (2), Run (3), Result (4),
-   FAULT_LOCKED banner. The run itself lives in sequencer.js; this file only drives its
+   Report (5), FAULT_LOCKED banner. The run itself lives in sequencer.js; this file only drives its
    clock (advance(speed × real dt)) and renders it. */
 window.IGBT = window.IGBT || {};
 window.IGBT.ui = (function () {
   var D, V, E, SEQ, REP, F;
   var runCounter = 0;
-  var state = { runId: null, lastResult: null, userProfile: "demo", run: null, setup: null, report: null, blocked: null,
+  var state = { runId: null, lastResult: null, userProfile: "demo", run: null, setup: null, report: null, blocked: null, view: null,
                 timer: null, lastTick: 0, logCount: 0, focusKey: null };
 
   function el(tag, attrs, children) {
@@ -70,8 +70,8 @@ window.IGBT.ui = (function () {
   }
   // Workflow strip: which of the five steps (02 §11) a screen belongs to
   var screenShownOnce = false;
-  var SCREENS = ["screen-setup", "screen-invalid", "screen-blocked", "screen-precheck", "screen-run", "screen-result"];
-  var SCREEN_STEP = { "screen-setup": 1, "screen-invalid": 1, "screen-blocked": 1, "screen-precheck": 2, "screen-run": 3, "screen-result": 4 };
+  var SCREENS = ["screen-setup", "screen-invalid", "screen-blocked", "screen-precheck", "screen-run", "screen-result", "screen-report"];
+  var SCREEN_STEP = { "screen-setup": 1, "screen-invalid": 1, "screen-blocked": 1, "screen-precheck": 2, "screen-run": 3, "screen-result": 4, "screen-report": 5 };
   function setStep(n) {
     Array.prototype.forEach.call(document.querySelectorAll("#workflow-steps li"), function (li) {
       var s = parseInt(li.getAttribute("data-step"), 10);
@@ -89,37 +89,19 @@ window.IGBT.ui = (function () {
     screenShownOnce = true;
   }
 
-  // ---- shared formatting ----
-  function dpOf(q) { var d = D.display_decimals[q]; return d === undefined ? 2 : d; }
-  function numText(q, x) { return F.fixed(x, dpOf(q)); }
-  function unitOf(r) { return r.unit === "bool" ? "" : r.unit; }
-  function valueText(r) {
-    if (r.value === null || r.value === undefined) return "—";
-    return typeof r.value === "number" ? numText(r.quantity_id, r.value) : String(r.value);
-  }
-  function ruleText(r) {
-    var u = unitOf(r) ? " " + unitOf(r) : "", q = r.quantity_id, x = r.rule;
-    switch (x.type) {
-      case "window": return "window " + (x.min === null ? "?" : numText(q, x.min)) + " to " + (x.max === null ? "?" : numText(q, x.max)) + u;
-      case "max": return "max " + (x.max === null ? "not configured" : numText(q, x.max) + u);
-      case "min": return "min " + (x.min === null ? "not configured" : numText(q, x.min) + u);
-      case "time_max": return "max " + (x.max === null ? "not configured" : numText(q, x.max) + u) + " (event within window)";
-      case "boolean": return "expect " + (x.expect === null ? "not configured" : String(x.expect));
-      case "info": return "info (not judged)";
-    }
-    return x.type;
-  }
-  function marginText(r) {
-    if (r.margin === null || r.margin === undefined) return "—";
-    return (r.margin > 0 ? "+" : "") + numText(r.quantity_id, r.margin) + (unitOf(r) ? " " + unitOf(r) : "");
-  }
+  // ---- shared formatting: the same text helpers as the HTML report (report.js), so they agree ----
+  function unitOf(r) { return REP.text.unitOf(r); }
+  function valueText(r) { return REP.text.valueText(r); }
+  function ruleText(r) { return REP.text.ruleText(r); }
+  function marginText(r) { return REP.text.marginText(r); }
   // Provenance chips (05 §1): basis, case reference, NOT APPROVED; info rules say so
   function chipsFor(r) {
     var box = el("div", { class: "chips" });
-    if (r.rule.type === "info") { box.appendChild(el("span", { class: "chip", text: "INFO · not judged" })); return box; }
-    box.appendChild(el("span", { class: "chip", text: "ILLUSTRATIVE · " + r.rule_basis }));
-    if (r.reference_id) box.appendChild(el("span", { class: "chip", text: "Case ref " + r.reference_id, title: r.reference_text || "" }));
-    box.appendChild(el("span", { class: "chip chip-na", text: "NOT APPROVED" }));
+    REP.text.chipTexts(r).forEach(function (t) {
+      var attrs = { class: "chip" + (t === "NOT APPROVED" ? " chip-na" : ""), text: t };
+      if (t.indexOf("Case ref ") === 0) attrs.title = r.reference_text || "";
+      box.appendChild(el("span", attrs));
+    });
     return box;
   }
   function verdictChip(v) {
@@ -198,7 +180,7 @@ window.IGBT.ui = (function () {
   function newRunId() { state.runId = nextRunId(); $("run-id").textContent = state.runId; }
   function backToSetup() {
     stopTimer();
-    state.run = null; state.report = null; state.blocked = null;
+    state.run = null; state.report = null; state.blocked = null; state.view = null;
     $("fault-banner").hidden = true;
     newRunId(); refreshSetup(); showScreen("screen-setup");
   }
@@ -289,13 +271,11 @@ window.IGBT.ui = (function () {
     $("blocked-text").textContent = D.fixed_texts.config_blocked;
     $("blocked-label").textContent = D.verdict_labels.NOT_EVALUATED;
     $("blocked-reason").textContent = "block_reason: " + res.block_reason;
-    state.blocked = { setup: setup, res: res };
+    // One report object per blocked run, so the JSON and HTML exports carry the same metadata
+    state.blocked = { setup: setup, res: res, report: REP.buildConfigBlockedJson(res, { run_id: setup.run_id, operator: setup.operator }) };
     showScreen("screen-blocked");
   }
-  function exportBlocked() {
-    if (!state.blocked) return;
-    REP.download(REP.buildConfigBlockedJson(state.blocked.res, { run_id: state.blocked.setup.run_id, operator: state.blocked.setup.operator }));
-  }
+  function exportBlocked() { if (state.blocked) REP.download(state.blocked.report); }
 
   // ---- Screen 2: Pre-check (IL1–IL7 lamps; START only when all OK) ----
   var IL_TOGGLES = {
@@ -580,10 +560,48 @@ window.IGBT.ui = (function () {
       var comps = st.physical_components.map(function (c) { return c.basis + " " + F.num(c.seconds) + " s" + (c.note ? " (" + c.note + ")" : ""); }).join(" + ");
       cb.appendChild(el("tr", null, [el("td", { text: st.test_id + " · " + st.name }), el("td", { text: st.status.replace(/_/g, " ") }), el("td", { text: comps || "—" }), el("td", { text: F.fixed(st.physical_estimate_s, 2) })]));
     });
-    var locked = !!state.run && state.run.state === "FAULT_LOCKED";
-    $("btn-result-new").disabled = locked;
-    $("btn-result-new").title = locked ? "FAULT_LOCKED: use Reset simulation in the red banner" : "";
+    lockNewRun($("btn-result-new"));
     showScreen("screen-result");
+  }
+  // In FAULT_LOCKED, New run is disabled; the red banner's Reset simulation is the only exit
+  function lockNewRun(btn) {
+    var locked = !!state.run && state.run.state === "FAULT_LOCKED";
+    btn.disabled = locked;
+    btn.title = locked ? "FAULT_LOCKED: use Reset simulation in the red banner" : "";
+  }
+
+  // ---- Screen 5: Report (02 §11): preview, Print / Save PDF, Download JSON, Download HTML ----
+  // from = "result" (a finished run) or "blocked" (the CONFIG_BLOCKED report from Screen 1b)
+  function showReport(from) {
+    var rep = from === "blocked" ? (state.blocked && state.blocked.report) : state.report;
+    if (!rep) return;
+    state.view = { from: from, report: rep };
+    var o = rep.deterministic.overall, inp = rep.deterministic.inputs;
+    $("report-meta").textContent = rep.metadata.run_id + " · scenario " + inp.scenario_id + " (" + inp.scenario_name + ") · overall " + o.verdict;
+    $("report-files").textContent = "Files: " + REP.fileName(rep, "html") + " · " + REP.fileName(rep, "json");
+    $("report-preview").srcdoc = REP.buildHtml(rep);
+    $("btn-report-back").textContent = from === "blocked" ? "Back" : "Back to result";
+    $("report-print-note").hidden = true;
+    lockNewRun($("btn-report-new"));
+    showScreen("screen-report");
+  }
+  function reportBack() {
+    if (state.view && state.view.from === "blocked") showScreen("screen-blocked");
+    else showScreen("screen-result");
+  }
+  // Print the preview frame only (the report, not the app). If the frame cannot be reached,
+  // open the report on its own in a new tab, where the browser's Print works.
+  function printReport() {
+    var frame = $("report-preview");
+    try {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } catch (e) {
+      var url = URL.createObjectURL(new Blob([REP.buildHtml(state.view.report)], { type: "text/html" }));
+      window.open(url, "_blank");
+      $("report-print-note").hidden = false;
+      $("report-print-note").textContent = "The report opened in a new tab. Use the browser's Print there and choose Save as PDF.";
+    }
   }
 
   function resetSimulation() {
@@ -605,6 +623,13 @@ window.IGBT.ui = (function () {
       $("btn-run-new").addEventListener("click", backToSetup);
       $("btn-result-new").addEventListener("click", backToSetup);
       $("btn-download-json").addEventListener("click", function () { if (state.report) REP.download(state.report); });
+      $("btn-view-report").addEventListener("click", function () { showReport("result"); });
+      $("btn-blocked-report").addEventListener("click", function () { showReport("blocked"); });
+      $("btn-report-back").addEventListener("click", reportBack);
+      $("btn-report-new").addEventListener("click", backToSetup);
+      $("btn-report-print").addEventListener("click", printReport);
+      $("btn-report-html").addEventListener("click", function () { if (state.view) REP.downloadHtml(state.view.report); });
+      $("btn-report-json").addEventListener("click", function () { if (state.view) REP.download(state.view.report); });
       $("btn-reset-sim").addEventListener("click", resetSimulation);
       showScreen("screen-setup");
     }

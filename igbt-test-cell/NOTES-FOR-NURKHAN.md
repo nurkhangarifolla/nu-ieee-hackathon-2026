@@ -3,7 +3,7 @@
 ## Needs your decision
 - **`required` flag on rules.** 05 §3.3 has no `required` column. I set `required: true` for every non-info rule and `false` for Q16 (info). This matches 03 §12. Logged in `Decisions.md` as Pending Said.
 - **Presentation-laptop browser (D1).** Default Chrome or Edge. Tell me if it's Safari or Firefox; I'll test there.
-- **TICKET 02 in your own browser (2 min).** I tested `file://` in headless Chrome with the network off (screenshots in `../design/screenshots/t02-*`). The app's built-in browser pane can't run it: the folder name ends in a space, so the pane shows a static copy without scripts. Please double-click `index.html` once with Wi-Fi off, run S0, press Abort during T08a, and check the console is clean.
+- **TICKETS 02–03 in your own browser (3 min).** I tested `file://` in headless Chrome with the network off (screenshots in `../design/screenshots/t02-*` and `t03-*`). The app's built-in browser pane can't run it: the folder name ends in a space, so the pane shows a static copy without scripts. Please double-click `index.html` once with Wi-Fi off: run S0 and press Abort during T08a; then run S8 → VIEW RESULT → VIEW REPORT → Print / Save PDF and check every PDF page has the yellow banner and the black footer. Check the console is clean.
 - **Abort and then a failed discharge (TICKET 02, Pending Said).** If a run is aborted *and* the safe state is then not verified, `abort_reason` keeps the trigger (e.g. `OPERATOR`) and the label is the "safe state not verified; enclosure kept locked" one. 05 §7 allows one reason only. Only reachable by aborting S8 by hand.
 
 ## Decisions I made
@@ -34,3 +34,13 @@
 - **`case_references` in the JSON** = references cited by this run's readings, plus REF-09 when it appears in conditions text. The CONFIG_BLOCKED JSON has a single `CONFIG_BLOCKED` event.
 - **Noise.** `rng.n` returns x unchanged for σ = 0 and never touches a PRNG. σ > 0 (P1) throws "not built"; nothing in the UI can set it.
 - **Result table** puts each reason on its own line under the reading, so the table fits without sideways scrolling.
+
+### TICKET 03 (S1–S8 checks, HTML report, Report screen)
+- **One copy of the checks.** The 03 §12 expected table lives only in `selfcheck.html`. `node dev/selfcheck-node.js` reads that same `<script id="checks">` block and also prints the AC-11 actual-vs-expected table. Where 03 §12 says only "T10 DONE" (S1, S4, S8), the check asks for status DONE; Q18 is checked under key values.
+- **S8 "timeout 120 s"** is checked as DISCHARGE_FAILED exactly 120 s after DISCHARGE_START, with the bus still at 600 V at verification.
+- **Shared display text.** Value, rule, margin and chip text moved from `ui.js` into `report.js` (`IGBT.report.text`). The Result screen and the HTML report use the same helpers, so they can't disagree (AC-06).
+- **HTML report layout.** 05 §10 order. A4 landscape. Banner and footer repeat on every printed page (fixed elements plus repeating table header/footer spacers; checked: every page of the S0, S1, S4, S5, S8 PDFs). The footer also carries the banner text and run ID. Each stage gets its own row (status, blocked reason) above its readings; each reading has a second line with conditions, reason and model equation. Hypotheses appear only in section 5. S8 shows the FAULT_LOCKED text in red under Overall and in the safe-state block.
+- **"Overrides" in the report inputs** = values that differ from the data-file defaults, plus the scenario's events and forced profile (read from `data.js` by scenario ID, display only, never used for a verdict).
+- **No deterministic hash in the footer.** It's P2 in 04 §1 (05 §6.2 only suggests it). Easy to add later if Said wants it for AC-02.
+- **Screen 5 Report.** Preview in an iframe. Print / Save PDF prints the preview only; if the frame can't be reached it opens the report in a new tab with a note. New run is disabled in FAULT_LOCKED, as on Result. VIEW REPORT is now the Result screen's main button; 1b has View report too.
+- **1b report** is built once when 1b opens, so its JSON and HTML downloads share the same `created_local`.

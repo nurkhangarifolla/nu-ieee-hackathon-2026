@@ -15,7 +15,7 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | 01 | Offline skeleton, all data, validation + config preflight | Skeleton (+1 h) | **Done** (commit c874602; selfcheck 28/28; AC-01 on a second laptop still to do) |
 | 01b | Design pass: `DESIGN.md` (NVIDIA style) applied to banner, header, Setup, 1a, 1b | – | **Done** (selfcheck 28/28; screenshots in `design/screenshots/`) |
 | 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Done** (S0 matches 03 §12; AC-02 diff empty; AC-12 in headless Chrome over `file://`, offline; selfcheck 59/59; Nurkhan's own-browser check still to do) |
-| 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report | M2 17:30 | Not written |
+| 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report + Report screen | M2 17:30 | **Done** (every §12 cell matches, AC-11 table; selfcheck 133/133 in node and headless Chrome; AC-02 diffs empty; PDFs carry banner and footer on every page; Nurkhan's own-browser check still to do) |
 | 04 | Custom (AC-03), AC-14 set, AC-01 on a second laptop | M3 18:30 | Not written |
 
 ## Builder standing brief
@@ -85,6 +85,7 @@ Done when:
 - selfcheck.html shows all cases PASS (give the count).
 - grep -rnE 'fetch\(|type="module"|https?://' igbt-test-cell returns nothing.
 Commit "TICKET 01: skeleton, data, validation, preflight". Report in the standing format, with the selfcheck output pasted.
+```
 
 ## TICKET 02
 
@@ -194,4 +195,68 @@ Done when:
 - selfcheck.html: all cases PASS (give the count).
 Commit "TICKET 02: engine, sequencer, safe state, S0 + JSON". Report in the standing format,
 with the S0 actual-vs-expected table.
+```
+
+## TICKET 03
+
+Run this in Claude Code from `/Users/nurhangarifolla/Hackathon /`. The app lives in `igbt-test-cell/`.
+
+```
+TICKET 03: S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report + Report screen (M2, 17:30)
+
+Context: Third slice (04 §3 M2). The σ = 0 engine already gives every 03 §12 row in node
+(Decisions.md, "Info"). This slice proves it with checks that run in node and in the browser,
+adds the 05 §10 HTML report and Screen 5 Report (02 §11). Custom flip (AC-03), the AC-14 set
+and AC-01 on a second laptop are TICKET 04.
+Specs: 03 §12; 03 §13 AC-02, AC-04, AC-05, AC-06, AC-07, AC-08, AC-11, AC-13; 05 §6, §8, §10,
+§11; 02 §2 (C4–C7), §11 (Screen 5). Look and feel: DESIGN.md.
+
+Hard rules
+- Everything from TICKETS 01–02 still holds (classic <script src>, offline, values verbatim,
+  no spec edits, no scenario ID in engine.js / models.js / sequencer.js).
+- Expected outcomes live only in the checks (selfcheck.html), never on the app's code path.
+- If any scenario disagrees with 03 §12, stop and log it in Decisions.md as "Pending Said".
+  Never change a value, limit or expected outcome to make it match.
+
+1. selfcheck.html: an expected table copied from 03 §12 for S0, S1, S2, S3, S4, S5, S8
+   (stage outcomes, key values, safe state, overall + abort/block reason, physical total).
+   One case per scenario per column. Also:
+   - AC-04: S1 BLOCKED stages carry reasons; S1 has no BUS_CHARGE_START / DISCHARGE_START.
+     S4 has the full SS1–SS9 event sequence in order. Neither is PASS.
+   - AC-05: S5 has no stage executed, no bus events, NOT EVALUATED + block_reason; its label
+     differs from the INCOMPLETE label.
+   - AC-13: S8 door LOCKED, final FAULT_LOCKED, no DOOR_UNLOCKED, overall ABORTED, report builds.
+   - AC-02 per scenario (two runs, byte-identical deterministic sections).
+2. dev/selfcheck-node.js: runs the same checks in node (reads the <script id="checks"> block
+   from selfcheck.html, so there is one copy) and prints the total plus the AC-11
+   actual-vs-expected table in Markdown.
+3. report.js:
+   - Shared text helpers (value, rule, margin, chips) used by both the UI and the HTML report,
+     so the two never disagree (AC-06).
+   - buildHtml(report): one self-contained HTML string in the 05 §10 order (sections 1–11),
+     inline CSS, no <script>, no URL. Banner and footer repeat on every printed page.
+     FAULT_LOCKED in red. Every chip carries text. All text escaped. Reading rows carry
+     data-q and data-verdict for the AC-06 check. Works for the CONFIG_BLOCKED report too.
+   - downloadHtml(report) → report_<run_id>.html (Blob, as JSON).
+4. dev/run-node.js: --html prints the HTML report.
+5. ui.js + index.html, styled per DESIGN.md: Screen 5 Report = preview (iframe srcdoc),
+   Print / Save PDF (prints the preview), Download JSON, Download HTML, Back to result,
+   New run (disabled in FAULT_LOCKED). Result gets VIEW REPORT. 1b gets View report.
+6. selfcheck.html: HTML checks: banner, footer, limitations, chip legend; every JSON reading
+   has an HTML row with the same ID, value text, verdict and chips (AC-06); every event row
+   shows both clocks with animation = physical / speed (AC-08); no URL and no <script>.
+
+Done when:
+- node dev/selfcheck-node.js: all cases PASS (give the count) and the AC-11 table matches
+  every cell for S0, S1, S2, S3, S4, S5, S8.
+- AC-02: two node runs of each of those scenarios give byte-identical deterministic sections.
+- HTML reports for S0, S1, S4, S5, S8 print to PDF in headless Chrome with the banner and
+  footer on every page; S8 shows FAULT_LOCKED in red.
+- Browser, file://, offline (headless Chrome): S1 and S8 go Setup → Pre-check → Run → Result
+  → Report; Download JSON and Download HTML both write files; the preview's print is
+  reachable; 1b → View report works for S5; no console errors.
+- selfcheck.html in the browser gives the same count as node.
+- Both greps from TICKET 02 return nothing.
+Commit "TICKET 03: S1–S8 checks, HTML report, Report screen". Report in the standing format,
+with the AC-11 table.
 ```

@@ -1,7 +1,8 @@
 /* dev/run-node.js: run one scenario to the end in node and print the deterministic section.
    Not loaded by index.html; leave dev/ out of the zip.
    Usage: node dev/run-node.js S0 > s0.json
-          node dev/run-node.js S0 --report     (whole report JSON, incl. metadata) */
+          node dev/run-node.js S0 --report     (whole report JSON, incl. metadata)
+          node dev/run-node.js S0 --html > report_S0.html   (HTML report, 05 §10) */
 "use strict";
 var fs = require("fs"), path = require("path"), vm = require("vm");
 
@@ -16,7 +17,7 @@ files.forEach(function (f) {
 
 var args = process.argv.slice(2);
 var scenarioId = args.filter(function (a) { return a.indexOf("--") !== 0; })[0] || "S0";
-var full = args.indexOf("--report") >= 0;
+var full = args.indexOf("--report") >= 0, html = args.indexOf("--html") >= 0;
 var D = ctx.APP_DATA, V = ctx.IGBT.validate, SEQ = ctx.IGBT.sequencer, REP = ctx.IGBT.report;
 
 var setup = {
@@ -36,4 +37,5 @@ if (pre.status === "INVALID") {
   var run = SEQ.runToEnd(SEQ.create(pre));
   report = REP.buildJson(run, { run_id: setup.run_id, operator: setup.operator });
 }
-process.stdout.write(JSON.stringify(full ? report : report.deterministic, null, 2) + "\n");
+if (html) process.stdout.write(REP.buildHtml(report));
+else process.stdout.write(JSON.stringify(full ? report : report.deterministic, null, 2) + "\n");
