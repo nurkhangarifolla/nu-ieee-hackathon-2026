@@ -18,8 +18,7 @@ function good(p = payload) {
   const facts = values(p), unavailable = facts.get(VERIFY_REF) === 'VERIFICATION_UNAVAILABLE';
   return {
     summary: `Existing outcome ${facts.get(VERDICT_REF)}. ${unavailable ? 'Bus voltage is a model estimate; verification is unavailable and the voltage is not independently verified.' : 'The verification state describes synthetic data only.'}`,
-    supporting_evidence: [VERDICT_REF, ...(facts.has(VERIFY_REF) ? [VERIFY_REF] : [])].map(ref => ({ ref, explanation: `Reported value: ${facts.get(ref)}.` })),
-    limitations: [...STANDARD_LIMITATIONS]
+    supporting_evidence: [VERDICT_REF, facts.has(VERIFY_REF) ? VERIFY_REF : '/deterministic/overall/block_reason'].map(ref => ({ ref, explanation: `Reported value: ${facts.get(ref)}.` }))
   };
 }
 const envelope = result => ({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(result) }] }] });
@@ -74,12 +73,12 @@ test('Responses request has strict source refs, bounds and no report instruction
   const schema = body.text.format.schema.properties;
   assert.equal(schema.supporting_evidence.minItems, 2);
   assert.equal(schema.supporting_evidence.maxItems, OUTPUT_LIMITS.evidence);
-  assert.equal(schema.limitations.minItems, STANDARD_LIMITATIONS.length);
-  assert.equal(schema.limitations.maxItems, OUTPUT_LIMITS.limitations);
-  assert.deepEqual(schema.limitations.items.enum, STANDARD_LIMITATIONS);
+  assert.deepEqual(Object.keys(schema).sort(), ['summary', 'supporting_evidence']);
+  assert.deepEqual(body.text.format.schema.required, ['summary', 'supporting_evidence']);
+  assert.equal(schema.limitations, undefined);
+  assert.ok(STANDARD_LIMITATIONS.every(text => !JSON.stringify(body).includes(text)));
   for (const [field, limit] of [[schema.summary, OUTPUT_LIMITS.summary],
-    [schema.supporting_evidence.items.properties.explanation, OUTPUT_LIMITS.explanation],
-    [schema.limitations.items, OUTPUT_LIMITS.limitation]]) {
+    [schema.supporting_evidence.items.properties.explanation, OUTPUT_LIMITS.explanation]]) {
     const pattern = new RegExp(field.pattern);
     assert.equal(pattern.test('x'.repeat(limit)), true);
     assert.equal(pattern.test('x'.repeat(limit + 1)), false);
@@ -87,7 +86,8 @@ test('Responses request has strict source refs, bounds and no report instruction
   }
   assert.equal(schema.supporting_evidence.uniqueItems, undefined);
   assert.equal(schema.supporting_evidence.contains, undefined);
-  assert.ok(body.instructions.includes(`1-${OUTPUT_LIMITS.evidence} evidence items`));
+  assert.ok(body.instructions.includes(`${OUTPUT_LIMITS.minEvidence}-${OUTPUT_LIMITS.evidence} evidence items`));
+  assert.match(body.instructions, /Do not return limitations/);
   assert.match(body.instructions, /each ref at most ONCE/);
   assert.ok(body.instructions.includes(`"${values(payload).get(VERDICT_REF)}"`));
   assert.ok(body.instructions.includes(`Mandatory supporting_evidence refs (each exactly once): ${VERDICT_REF}, ${VERIFY_REF}`));
@@ -102,12 +102,7 @@ const validationCases = [
   ['EVIDENCE_NOT_ARRAY', r => { r.supporting_evidence = null; }],
   ['EVIDENCE_COUNT', r => { r.supporting_evidence = payload.evidence.slice(0, OUTPUT_LIMITS.evidence + 1).map(e => ({ ref: e.ref, explanation: 'Synthetic evidence.' })); }],
   ['EVIDENCE_COUNT', r => { r.supporting_evidence = []; }],
-  ['LIMITATIONS_NOT_ARRAY', r => { r.limitations = 'PRIVATE_RESPONSE_TEXT'; }],
-  ['LIMITATIONS_COUNT', r => { r.limitations = Array(OUTPUT_LIMITS.limitations + 1).fill('Synthetic only.'); }],
-  ['LIMITATIONS_COUNT', r => { r.limitations = []; }],
-  ['LIMITATION_TEXT_INVALID', r => { r.limitations[0] = 'x'.repeat(OUTPUT_LIMITS.limitation + 1); }],
-  ['LIMITATION_NOT_STANDARD', r => { r.limitations[0] = 'PRIVATE_RESPONSE_TEXT'; }],
-  ['LIMITATION_DUPLICATE', r => { r.limitations[1] = r.limitations[0]; }],
+  ['OUTPUT_OBJECT_SHAPE', r => { r.limitations = [...STANDARD_LIMITATIONS]; }],
   ['EVIDENCE_ITEM_SHAPE', r => { r.supporting_evidence[0].extra = 'PRIVATE_RESPONSE_TEXT'; }],
   ['CITATION_UNKNOWN', r => { r.supporting_evidence[0].ref = '/PRIVATE_NOT_A_SOURCE'; }],
   ['EVIDENCE_TEXT_INVALID', r => { r.supporting_evidence[0].explanation = 'x'.repeat(OUTPUT_LIMITS.explanation + 1); }],
@@ -137,8 +132,7 @@ for (const id of ['S0', 'S4', 'S8', 'S8b']) {
   test(`${id}: valid concise explanation of full projected report is accepted`, async () => {
     const p = prepareReport(reports[id]), before = JSON.stringify(p), result = good(p), facts = values(p);
     assert.ok(p.evidence.length > 100); // Exercise the full projection, not the reduced live-check payload.
-    const refs = ['/deterministic/safe_state/door', '/deterministic/stages/11/status',
-      '/deterministic/stages/11/readings/0/value', '/deterministic/safe_state/v_bus_at_verification_v'];
+    const refs = ['/deterministic/safe_state/door', '/deterministic/safe_state/v_bus_at_verification_v'];
     for (const ref of refs) result.supporting_evidence.push({ ref, explanation: `Synthetic field value: ${facts.get(ref)}.` });
     const schema = requestBody(p, 'gpt-4.1-mini').text.format.schema.properties;
     assert.ok(result.supporting_evidence.length <= schema.supporting_evidence.maxItems);
@@ -151,19 +145,43 @@ for (const id of ['S0', 'S4', 'S8', 'S8b']) {
 
 test('verification citation is conditional only when the procedure did not run', () => {
   const p = prepareReport(reports.S5), result = good(p);
-  assert.equal(requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.supporting_evidence.minItems, 1);
-  assert.equal(result.supporting_evidence.length, 1); assert.deepEqual(validateExplanation(result, p), result);
+  assert.equal(requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.supporting_evidence.minItems, 2);
+  assert.equal(result.supporting_evidence.length, 2); assert.deepEqual(validateExplanation(result, p), result);
 });
 
-test('S8 regression: quoted incorrect limitation is rejected, never repaired or displayed as AI', async () => {
+test('two evidence items are required even when no verification procedure ran', () => {
+  const p = prepareReport(reports.S5), result = good(p);
+  result.supporting_evidence.pop();
+  assert.throws(() => validateExplanation(result, p), error => {
+    assert.deepEqual(error.diagnostics.codes, ['EVIDENCE_COUNT']); return true;
+  });
+});
+
+test('S8b qualification can be in generated evidence independently of the summary', () => {
+  const result = good();
+  result.summary = 'ABORTED. The enclosure remains locked.';
+  result.supporting_evidence[1].explanation = 'Verification is unavailable; retained voltage is a model estimate, not independently verified.';
+  assert.deepEqual(validateExplanation(result, payload), result);
+  assert.deepEqual(Object.keys(result).sort(), ['summary', 'supporting_evidence']);
+});
+
+test('fixed local limitations and a status enum cannot substitute for S8b generated qualification', () => {
+  const result = good(); result.summary = 'ABORTED. The enclosure remains locked.';
+  assert.equal(STANDARD_LIMITATIONS.length, 4);
+  assert.throws(() => validateExplanation(result, payload), error => {
+    assert.deepEqual(error.diagnostics.codes, ['UNAVAILABLE_MODEL_ESTIMATE_MISSING']); return true;
+  });
+});
+
+test('S8 regression: quoted incorrect status claim is rejected, never repaired or displayed as AI', async () => {
   const p = prepareReport(reports.S8), result = good(p);
   const incorrect = 'Physical durations and events are simulated and verification is unavailable.';
-  result.limitations[0] = incorrect;
+  result.summary = 'ABORTED. ' + incorrect;
   const before = JSON.stringify(result);
-  assert.ok(!requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.limitations.items.enum.includes(incorrect));
+  assert.equal(requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.limitations, undefined);
   let calls = 0;
   await assert.rejects(explain(p, { apiKey: 'TEST_ONLY', fetchImpl: async () => { calls++; return response(envelope(result)); } }), error => {
-    assert.deepEqual(error.diagnostics.codes, ['LIMITATION_NOT_STANDARD']);
+    assert.deepEqual(error.diagnostics.codes, ['VERIFICATION_STATUS_CONTRADICTION']);
     assert.ok(!JSON.stringify(error.diagnostics).includes(incorrect)); return true;
   });
   assert.equal(calls, 1); assert.equal(JSON.stringify(result), before);
@@ -175,7 +193,7 @@ for (const [id, expected] of [['S0', 'VERIFIED'], ['S8', 'DISCHARGE_FAILED'], ['
     assert.equal(context.status, expected);
     assert.ok(body.instructions.includes(`Actual verification status: ${expected}.`));
     assert.ok(body.instructions.includes(`Status-specific context: ${context.meaning}`));
-    assert.ok(body.instructions.includes('limitations array is fixed application disclosure text, NOT generated analysis'));
+    assert.ok(body.instructions.includes('Do not return limitations; fixed disclosures already render locally.'));
     assert.ok(STANDARD_LIMITATIONS.every(text => !/verification/i.test(text)));
     assert.equal(reviewSummary(p).voltage_context, context.meaning);
     if (id === 'S8') { assert.match(context.meaning, /verification ran and reported failed discharge/); assert.ok(!/unavailable/i.test(context.meaning)); }
@@ -273,6 +291,38 @@ for (const [code, body] of [
   });
 });
 
+for (const [details, expected] of [
+  [{ reason: 'max_output_tokens' }, 'max_output_tokens'],
+  [{ reason: 'max_messages' }, 'max_messages'],
+  [{ reason: 'content_filter' }, 'content_filter'],
+  [{ reason: 'steered' }, 'steered'],
+  [undefined, 'not_provided'], [null, 'not_provided'], [{}, 'not_provided'],
+  [{ reason: null }, 'not_provided'],
+  [{ reason: 'PRIVATE_UNRECOGNIZED_REASON' }, 'unknown'],
+  [{ reason: { text: 'PRIVATE_RESPONSE_TEXT' } }, 'unknown'],
+  [{ reason: 123 }, 'unknown']
+]) test(`incomplete reason is sanitized: ${expected}`, async () => {
+  let calls = 0;
+  const body = { status: 'incomplete', incomplete_details: details,
+    output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'PRIVATE_PARTIAL_OUTPUT' }] }],
+    error: { message: 'PRIVATE_PROVIDER_ERROR' } };
+  await assert.rejects(explain(payload, { apiKey: 'TEST_PRIVATE_CREDENTIAL', fetchImpl: async () => { calls++; return response(body); } }), error => {
+    assert.equal(error.status, 502);
+    assert.deepEqual(error.diagnostics, { codes: ['RESPONSE_INCOMPLETE'], counts: {}, incomplete_reason: expected });
+    assert.ok(!JSON.stringify(error.diagnostics).includes('PRIVATE_'));
+    assert.ok(!error.message.includes('PRIVATE_')); return true;
+  });
+  assert.equal(calls, 1);
+});
+
+test('incomplete reason is preserved even if the incomplete envelope has no output array', async () => {
+  await assert.rejects(explain(payload, { apiKey: 'TEST_ONLY', fetchImpl: async () => response({
+    status: 'incomplete', incomplete_details: { reason: 'content_filter' }
+  }) }), error => {
+    assert.deepEqual(error.diagnostics, { codes: ['RESPONSE_INCOMPLETE'], counts: {}, incomplete_reason: 'content_filter' }); return true;
+  });
+});
+
 async function withServer(options, fn) {
   const server = createExplainerServer(options);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -283,6 +333,19 @@ async function withServer(options, fn) {
 const post = (base, data, headers = {}) => fetch(base + '/api/explain', {
   method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json', ...headers },
   body: typeof data === 'string' ? data : JSON.stringify(data)
+});
+
+test('HTTP incomplete diagnostic forwards only the allowlisted reason, not partial text', async () => {
+  let calls = 0;
+  await withServer({ apiKey: 'TEST_PRIVATE_CREDENTIAL', fetchImpl: async () => {
+    calls++; return response({ status: 'incomplete', incomplete_details: { reason: 'max_output_tokens', extra: 'PRIVATE_DETAILS' },
+      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'PRIVATE_PARTIAL_OUTPUT' }] }] });
+  } }, async base => {
+    const result = await post(base, payload), data = await result.json();
+    assert.equal(result.status, 502);
+    assert.deepEqual(data.diagnostics, { codes: ['RESPONSE_INCOMPLETE'], counts: {}, incomplete_reason: 'max_output_tokens' });
+    assert.ok(!JSON.stringify(data).includes('PRIVATE_')); assert.equal(calls, 1);
+  });
 });
 
 test('HTTP validation diagnostics expose only fixed codes/counts and make one call', async () => {
@@ -369,12 +432,12 @@ test('page selection stays local; one click sends only reviewed evidence; output
   $('report').files = [{ size: file.length, text: async () => file }];
   await $('report').handlers.change(); assert.equal(calls, 1);
   ctx.fetch = async () => { calls++; return new Response(JSON.stringify({
-    error: 'OpenAI returned an invalid or ungrounded explanation. Nothing substituted; no automatic retry.',
-    diagnostics: { codes: ['CITATION_DUPLICATE'], counts: { evidence_items: 2 } }
+    error: 'OpenAI did not complete the explanation. No automatic retry.',
+    diagnostics: { codes: ['RESPONSE_INCOMPLETE'], counts: {}, incomplete_reason: 'max_output_tokens' }
   }), { status: 502 }); };
   await $('explain').handlers.click();
-  assert.match($('status').textContent, /CITATION_DUPLICATE/);
-  assert.match($('status').textContent, /evidence_items/);
+  assert.match($('status').textContent, /RESPONSE_INCOMPLETE/);
+  assert.match($('status').textContent, /max_output_tokens/);
   assert.equal($('result').hidden, true); assert.equal(calls, 2);
   assert.deepEqual($('limitations').children.map(li => li.textContent), [...STANDARD_LIMITATIONS]);
   const markup = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
