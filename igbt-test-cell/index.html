@@ -393,6 +393,12 @@
   .oc-fail .oc-kind, .oc-benchfault .oc-kind { color:var(--error-deep); }
   .oc-detail { margin-top:var(--s-sm) !important; font-size:15px; line-height:1.5; color:var(--body); }
   .oc-detail ul { margin:var(--s-xs) 0 0; padding-left:var(--s-lg); }
+  .oc-detail ul.findings { list-style:none; padding:0; margin:var(--s-sm) 0 var(--s-md); display:grid; gap:6px; }
+  .findings li { padding:6px 10px 6px 12px; border-left:3px solid var(--ash); background:var(--canvas); border-radius:4px; font-size:14px; line-height:1.45; }
+  .findings .f-safety, .findings .f-fail { border-left-color:var(--error); }
+  .findings .f-stop, .findings .f-block { border-left-color:var(--warning); }
+  .f-tag { display:inline-block; min-width:74px; margin-right:6px; font-size:11px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; color:var(--mute); }
+  .oc-counts { margin:2px 0 0 !important; font-size:13px; color:var(--mute); }
   .oc-verdict { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-sm) var(--s-md); margin:var(--s-lg) 0 var(--s-xs); }
   #result-verdict { font-size:13px; font-weight:700; padding:3px 10px; border-width:1px; border-radius:999px; }
   .outcome .verdict-label { margin:0; font-size:13px; font-weight:500; line-height:1.45; color:var(--mute); }
@@ -718,7 +724,7 @@
     <div class="outcome" id="result-outcome">
       <div>
         <p class="oc-kind" id="result-kind"></p>
-        <p class="oc-detail" id="result-kind-detail"></p>
+        <div class="oc-detail" id="result-kind-detail"></div>
         <div class="oc-verdict"><span id="result-verdict" class="verdict"></span><span class="verdict-label" id="result-label"></span></div>
         <p class="outcome-reason" id="result-precedence"></p>
         <div class="meta" id="result-noise" hidden></div>
@@ -730,9 +736,9 @@
     </div>
 
     <div class="actions result-actions">
-      <button type="button" class="primary" id="btn-view-report">Open report</button>
-      <button type="button" id="btn-download-json">Download JSON</button>
+      <button type="button" class="primary" id="btn-view-report">View report</button>
       <button type="button" id="btn-result-new">New test</button>
+      <button type="button" class="quiet" id="btn-download-json">Download JSON</button>
     </div>
 
     <!-- Evidence: each part on demand; the summary lines carry the key figures -->
@@ -783,18 +789,18 @@
     <p class="eyebrow">Step 5 of 5</p>
     <h2 id="h-report" tabindex="-1">Report</h2>
     <div class="meta" id="report-meta"></div>
-    <p class="muted lead">Print / Save PDF prints this report only; choose “Save as PDF” in the print dialog.</p>
+    <p class="muted lead">Save PDF opens the print dialog for this report only; choose “Save as PDF” as the printer.</p>
     <div class="preview-wrap">
       <iframe id="report-preview" class="preview" title="HTML report preview"></iframe>
     </div>
     <p class="muted small" id="report-files"></p>
     <p class="alert alert-warn" id="report-print-note" role="status" hidden></p>
     <div class="actions">
-      <button type="button" id="btn-report-back">Back to outcome</button>
-      <button type="button" id="btn-report-new">New test</button>
+      <button type="button" class="primary" id="btn-report-print">Save PDF</button>
       <button type="button" id="btn-report-json">Download JSON</button>
       <button type="button" id="btn-report-html">Download HTML</button>
-      <button type="button" class="primary" id="btn-report-print">Print / Save PDF</button>
+      <button type="button" class="quiet" id="btn-report-back">Back to outcome</button>
+      <button type="button" class="quiet" id="btn-report-new">New test</button>
     </div>
   </section>
 </main>

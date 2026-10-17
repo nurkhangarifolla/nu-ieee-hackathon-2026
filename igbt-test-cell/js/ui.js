@@ -586,47 +586,29 @@ window.IGBT.ui = (function () {
   // ---- Screen 4: Result ----
   // Outcome kind for the operator (display only; derived from the engine's overall verdict, abort reason and
   // safe-state record, never from the scenario): passed, module failed, interrupted, bench fault, incomplete.
-  function abortText(reason) {
-    if (reason === "OPERATOR") return "Stopped by the operator.";
-    if (reason === "WATCHDOG") return "Controller heartbeat lost; the bench stopped the test.";
-    var il = D.interlocks.filter(function (x) { return x.id + "_OPEN" === reason; })[0];
-    if (il) return "Interlock " + il.id + " opened (" + il.short + "); the bench stopped the test.";
-    return reason ? "Stopped: " + reason + "." : "";
-  }
+  // Findings and counts come from the same helpers as the HTML report (report.js), so the two agree.
+  var FINDING_TAG = { safety: "Safe state", fail: "Failed", stop: "Stopped", block: "Blocked", note: "Not run" };
   function renderOutcomeKind(det) {
     var o = det.overall, ss = det.safe_state, box = $("result-outcome");
     if (!box) return;
     var locked = !!ss && ss.final_state === "FAULT_LOCKED";
-    var kind, title, detail = null;
-    if (locked) {
-      kind = "oc-benchfault"; title = "Bench fault";
-      detail = el("p", null, [ss.verification === "VERIFICATION_UNAVAILABLE"
-        ? "The discharge could not be verified (verification meter unavailable). The enclosure stays locked."
-        : "The bus did not discharge to a safe level. The enclosure stays locked."]);
-    } else if (o.verdict === "FAIL") {
-      var fails = [];
-      det.stages.forEach(function (st) { st.readings.forEach(function (r) { if (r.verdict === "FAIL") fails.push(r); }); });
-      kind = "oc-fail"; title = "Module failed";
-      detail = el("div", null, [
-        fails.length + (fails.length === 1 ? " check failed:" : " checks failed:"),
-        el("ul", null, fails.map(function (r) {
-          var u = unitOf(r);
-          return el("li", { text: r.label + ": " + valueText(r) + (u && r.value !== null ? " " + u : "") + " (rule " + ruleText(r) + ")" });
-        }))
-      ]);
-    } else if (o.verdict === "ABORTED") {
-      kind = "oc-interrupted"; title = "Test interrupted";
-      detail = el("p", null, [abortText(o.abort_reason) + " No module verdict."]);
-    } else if (o.verdict === "PASS") {
-      kind = "oc-pass"; title = "All checks passed";
-    } else {
-      kind = "oc-incomplete"; title = o.verdict === "INCOMPLETE" ? "Test incomplete" : o.verdict;
-    }
+    var nFail = REP.text.countsOf(det).readings.FAIL;
+    var kind, title;
+    if (locked) { kind = "oc-benchfault"; title = "Bench fault · safe state not verified"; }
+    else if (o.verdict === "FAIL") { kind = "oc-fail"; title = "Module failed · " + nFail + (nFail === 1 ? " check" : " checks"); }
+    else if (o.verdict === "ABORTED") { kind = "oc-interrupted"; title = "Test interrupted"; }
+    else if (o.verdict === "PASS") { kind = "oc-pass"; title = "All evaluated checks passed"; }
+    else { kind = "oc-incomplete"; title = o.verdict === "INCOMPLETE" ? "Test incomplete" : o.verdict; }
     box.className = "outcome " + kind;
     $("result-kind").textContent = title;
-    var d = clear($("result-kind-detail"));
-    if (detail) d.appendChild(detail);
-    d.hidden = !detail;
+    // Findings first (unresolved safe state, failed checks, interruption, not-run stages), then the counts
+    var d = clear($("result-kind-detail")), f = REP.text.keyFindings(det), c = REP.text.countsText(det);
+    if (f.length) d.appendChild(el("ul", { "class": "findings" }, f.map(function (x) {
+      return el("li", { "class": "f-" + x.kind }, [el("span", { "class": "f-tag", text: FINDING_TAG[x.kind] }), x.text]);
+    })));
+    d.appendChild(el("p", { "class": "oc-counts", text: c.readings }));
+    d.appendChild(el("p", { "class": "oc-counts", text: c.stages }));
+    d.hidden = false;
   }
 
   var VERDICT_CLASS = { PASS: "verdict verdict-pass", FAIL: "verdict verdict-fail", ABORTED: "verdict verdict-abort", INCOMPLETE: "verdict verdict-abort", "NOT EVALUATED": "verdict verdict-ne" };
@@ -687,10 +669,9 @@ window.IGBT.ui = (function () {
       else {
         enc.appendChild(el("p", { class: "enc-state" + (ss.door === "LOCKED" ? " enc-locked" : ss.final_state === "SAFE" ? " enc-safe" : ""),
           text: "Door " + ss.door }));
-        // No bus voltage when the meter was unavailable: nothing was measured at verification
-        var measured = ss.verification !== "VERIFICATION_UNAVAILABLE" && ss.v_bus_at_verification_v !== null && ss.v_bus_at_verification_v !== undefined;
-        enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") + " · verification " + ss.verification +
-          (measured ? " · bus at verification " + F.fixed(ss.v_bus_at_verification_v, 2) + " V" : "") }));
+        // Shared wording with the report; with the meter unavailable no verification voltage is claimed
+        enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") +
+          " · " + REP.text.verificationText(ss) }));
         if (ss.final_state === "FAULT_LOCKED") enc.appendChild(el("p", { class: "lockout-note",
           text: "Access locked out. Use Reset simulation in the red banner." }));
       }
@@ -703,9 +684,7 @@ window.IGBT.ui = (function () {
           ["Contactor", ss.contactor_open ? "open" : "closed"],
           ["v_bus at start", F.fixed(ss.v_bus_at_start_v, 1) + " V"],
           ["Discharge", ss.discharge_required ? (ss.discharge_time_s === null ? "required; did not reach v_safe" : "required; " + sec(ss.discharge_time_s)) : "not required"],
-          ["v_bus at verification", ss.verification === "VERIFICATION_UNAVAILABLE"
-            ? "not measured (verification meter unavailable); model value " + F.fixed(ss.v_bus_at_verification_v, 2) + " V"
-            : F.fixed(ss.v_bus_at_verification_v, 2) + " V"],
+          ["v_bus at verification", REP.text.vBusVerifyText(ss)],
           ["Verification", ss.verification],
           ["Door", ss.door],
           ["Final state", ss.final_state]
@@ -726,6 +705,7 @@ window.IGBT.ui = (function () {
   function lockNewRun(btn) {
     var locked = !!state.run && state.run.state === "FAULT_LOCKED";
     btn.disabled = locked;
+    btn.hidden = locked;   // not offered while access is locked out; Reset simulation is the only exit
     btn.title = locked ? "FAULT_LOCKED: use Reset simulation in the red banner" : "";
   }
 
