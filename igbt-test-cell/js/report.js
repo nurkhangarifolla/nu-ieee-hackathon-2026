@@ -151,9 +151,14 @@ window.IGBT.report = (function () {
   function dpOf(q) { var d = D().display_decimals[q]; return d === undefined ? 2 : d; }
   function numText(q, x) { return F().fixed(x, dpOf(q)); }
   function unitOf(r) { return r.unit === "bool" ? "" : r.unit; }
+  // Display precision, or full precision when rounding would make the value read the same as a
+  // limit it differs from (3.20004 V against max 3.20 V)
   function valueText(r) {
     if (r.value === null || r.value === undefined) return "—";
-    return typeof r.value === "number" ? numText(r.quantity_id, r.value) : String(r.value);
+    if (typeof r.value !== "number") return String(r.value);
+    var t = numText(r.quantity_id, r.value), x = r.rule;
+    var hidden = [x.min, x.max].some(function (l) { return typeof l === "number" && l !== r.value && numText(r.quantity_id, l) === t; });
+    return hidden ? F().num(r.value) : t;
   }
   function ruleText(r) {
     var u = unitOf(r) ? " " + unitOf(r) : "", q = r.quantity_id, x = r.rule;
@@ -167,9 +172,12 @@ window.IGBT.report = (function () {
     }
     return x.type;
   }
+  // Signed margin; a non-zero margin that rounds to zero is shown at full precision (−0.00004 V)
   function marginText(r) {
     if (r.margin === null || r.margin === undefined) return "—";
-    return (r.margin > 0 ? "+" : "") + numText(r.quantity_id, r.margin) + (unitOf(r) ? " " + unitOf(r) : "");
+    var t = numText(r.quantity_id, Math.abs(r.margin));
+    if (r.margin !== 0 && Number(t) === 0) t = F().num(Math.abs(r.margin));
+    return (r.margin > 0 ? "+" : r.margin < 0 ? "−" : "") + t + (unitOf(r) ? " " + unitOf(r) : "");
   }
   // Provenance chips (05 §1): basis, case reference, NOT APPROVED; info rules say so
   function chipTexts(r) {

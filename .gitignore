@@ -8,3 +8,5 @@ Originals/*.pptx
 .trash/
 # graphify output (rebuilt automatically)
 graphify-out/
+# Packaged app zips (rebuilt from igbt-test-cell/)
+dist/

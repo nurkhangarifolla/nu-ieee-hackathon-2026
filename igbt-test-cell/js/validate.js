@@ -233,8 +233,31 @@ window.IGBT.validate = (function () {
       e = e.concat(validateRule(r, profile.profile_status, p + ".rules"));
       if (r && isStr(r.quantity_id)) {
         if (seen[r.quantity_id]) e.push(err(p + ".rules." + r.quantity_id, r.quantity_id, "quantity_id must be unique"));
-        seen[r.quantity_id] = true;
+        seen[r.quantity_id] = r;
       }
+    });
+    return e.concat(validateRuleSet(seen, p + ".rules"));
+  }
+
+  // Complete rule set: exactly one rule for each modelled quantity (03 §6), on the stage that
+  // computes it, with its rule type, unit and required flag (data.js modelled_quantities); no
+  // rule for anything else. A missing rule would otherwise leave its stage with nothing to fail.
+  function validateRuleSet(byQ, prefix) {
+    var e = [], known = {};
+    data().modelled_quantities.forEach(function (want) {
+      var q = want.quantity_id, r = byQ[q], p = prefix + "." + q;
+      known[q] = true;
+      if (!r) {
+        e.push(err(p, undefined, "missing: every modelled quantity needs exactly one rule (" + q + " is computed in " + want.test_id + ")"));
+        return;
+      }
+      if (r.test_id !== want.test_id) e.push(err(p + ".test_id", r.test_id, "must be " + want.test_id + " (the stage that computes " + q + ")"));
+      if (r.rule_type !== want.rule_type) e.push(err(p + ".rule_type", r.rule_type, "must be " + want.rule_type + " for " + q));
+      if (r.unit !== want.unit) e.push(err(p + ".unit", r.unit, "must be " + want.unit + " for " + q));
+      if (r.required !== want.required) e.push(err(p + ".required", r.required, "must be " + want.required + " for " + q));
+    });
+    Object.keys(byQ).forEach(function (q) {
+      if (!known[q]) e.push(err(prefix + "." + q, q, "is not a modelled quantity (03 §6); the engine computes no reading for it"));
     });
     return e;
   }

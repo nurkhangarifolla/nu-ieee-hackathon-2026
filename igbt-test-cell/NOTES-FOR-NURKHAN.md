@@ -21,7 +21,7 @@
 
 ### TICKET 02 (engine, sequencer, safe state, S0 + JSON)
 - **IL3 (ground-bond) shows OK at Pre-check and is not tied to `bench_selfcheck_ok`.** If it were, a self-check failure would open IL3 and end ABORTED, but 03 §12 wants S10 to end INCOMPLETE. Pending Said in `Decisions.md`.
-- **Number hygiene.** Stored reading values are rounded to 4 dp, and stored seconds and volts (event times, stage times, bus voltages) to 2 dp, before judging and serialising. This removes float noise (2.4000000000000004 → 2.4) and keeps N3's 11.000 mΩ exactly on the 3.2 V limit (PASS). Margins are 4 dp. Pending Said in `Decisions.md`.
+- **Number hygiene.** Superseded by TICKET 03b (see below): values are judged at full precision; only event and stage times run on a 10 ms clock (2 dp).
 - **Display precision** per quantity (`display_decimals` in `data.js`) is read off the 03 §12 key values (Q01 0.35, Q06 15.0, Q12 1800, …). Display only; stored values keep 4 dp.
 - **Reason text** follows the 03 §8 templates with the full rule label. The 05 §6 example uses a shorter label and adds "at I = 200 A pulse"; I kept 03 §8. PASS reasons mirror the FAIL template ("≤ max", "within"). Chips are also added to `time_max` reasons. Readings not run say "`<label>`: not measured (stage `<status>`)".
 - **Extra fields** (allowed by the 05 header): `reading.conditions`, `stage.status_note`, `stage.model_equation` (T07 bus charge; T10 t_safe and E), `deterministic.hypotheses` (a list kept apart from verdicts). Stage `conditions` = the stage's reading conditions joined with "; ".
@@ -44,3 +44,11 @@
 - **No deterministic hash in the footer.** It's P2 in 04 §1 (05 §6.2 only suggests it). Easy to add later if Said wants it for AC-02.
 - **Screen 5 Report.** Preview in an iframe. Print / Save PDF prints the preview only; if the frame can't be reached it opens the report in a new tab with a note. New run is disabled in FAULT_LOCKED, as on Result. VIEW REPORT is now the Result screen's main button; 1b has View report too.
 - **1b report** is built once when 1b opens, so its JSON and HTML downloads share the same `created_local`.
+
+### TICKET 03b (independent-review fixes)
+- **Full precision.** Readings, margins and the safe-state decisions are judged and stored at full precision. Only binary floating-point noise beyond 12 significant digits is removed, so 1 + 0.007 × 200 is 2.4, not 2.4000000000000004, while 3.20004 V stays 3.20004 V and FAILs max 3.2 V. Margins use the same idea relative to their operands (−0.00004, not −0.0000399999999998). The screens and the HTML report round for display, but show full precision when rounding would make a value read like the limit it fails ("3.20004 V > max 3.20 V", margin "−0.00004 V").
+- **What changed in the outputs.** Only `v_bus_at_verification_v` in the JSON: 40.9365376539 instead of 40.94 (still shown as 40.94). Every reading, verdict, event and total is byte-identical to TICKET 03 for S0–S5 and S8. The 03 §12 checks compare voltages at display precision, as 03 §12 states them.
+- **Complete rule sets.** `data.js` lists the 17 modelled quantities (`modelled_quantities`: stage, rule type, unit, required). Validation rejects a profile that misses one, moves one to another stage, changes its type, unit or required flag, or adds a rule for anything else. A selfcheck confirms that the engine computes exactly this list, stage by stage.
+- **T10 timing.** If `verify_delay_s` is longer than the 20 s closing DWELL, T10 gets an extra COMPUTED component "verification wait beyond the closing DWELL", so T10's components, RUN_END and `physical_total_s` agree (509.85 s at 30 s).
+- **Version 0.3.1** (metadata and footer only), so this package can be told apart from the TICKET 03 build.
+- All three are logged as Pending Said in `Decisions.md`.

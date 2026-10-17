@@ -8,14 +8,28 @@ window.IGBT.engine = (function () {
   function D() { return window.APP_DATA; }
   var fmt = M.fmt;
 
-  // ---- number hygiene: stored readings 4 dp; stored seconds and volts 2 dp ----
+  // ---- number hygiene ----
+  // Readings and voltages are judged and stored at full precision; only binary floating-point
+  // noise is removed (12 significant digits: 2.4000000000000004 → 2.4, while 3.20004 stays
+  // 3.20004). Display rounds. Times run on a 10 ms clock (2 dp).
+  function clean(x) {
+    if (typeof x !== "number" || !isFinite(x)) return x;
+    var c = Number(x.toPrecision(12));
+    return c === 0 ? 0 : c;   // no −0
+  }
+  // a − b without cancellation noise: 12 significant digits relative to the operands
+  // (3.2 − 3.20004 = −0.00004, not −0.0000399999999998)
+  function diff(a, b) {
+    var mag = Math.max(Math.abs(a), Math.abs(b));
+    var dp = mag > 0 ? Math.min(20, Math.max(0, 11 - Math.floor(Math.log10(mag)))) : 0;
+    return clean(Number((a - b).toFixed(dp)));
+  }
   function round(x, dp) {
     if (typeof x !== "number" || !isFinite(x)) return x;
     var p = Math.pow(10, dp);
     var r = Math.round(x * p) / p;
     return r === 0 ? 0 : r;   // no −0
   }
-  function r4(x) { return round(x, 4); }
   function r2(x) { return round(x, 2); }
   // Seconds as text: one decimal when that is exact (365.0 s), otherwise two (499.85 s)
   function secText(x) { return round(x, 1) === round(x, 2) ? fmt.fixed(x, 1) : fmt.fixed(x, 2); }
@@ -57,7 +71,7 @@ window.IGBT.engine = (function () {
     var s = inputs.noise_rel_sigma, seed = inputs.seed, out = {};
     function n(x, q, sigma) { return RNG.n(x, sigma === undefined ? s : sigma, seed, q); }
     function put(q, v, obs, eq) {
-      out[q] = { value: typeof v === "number" ? r4(v) : v, observation: obs || "OBSERVED", model_equation: eq || null };
+      out[q] = { value: clean(v), observation: obs || "OBSERVED", model_equation: eq || null };
     }
     switch (testId) {
       case "T01":
@@ -90,13 +104,13 @@ window.IGBT.engine = (function () {
       case "T08a":
         var t1 = M.t1(b.l_load_uh, b.i_pulse_a, b.v_dc_test_v);
         put("Q16", t1.value, null, t1.equation);
-        var didt = r4(n(m.didt_a_per_us, "Q12"));
+        var didt = clean(n(m.didt_a_per_us, "Q12"));
         put("Q12", didt);
         var vp = M.vPeak(b.v_dc_test_v, b.l_stray_nh, didt);
         put("Q13", vp.value, null, vp.equation);
         break;
       case "T09":
-        var trip = m.desat_trip_us === null ? null : n(m.desat_trip_us, "Q14", 2 * s);
+        var trip = m.desat_trip_us === null ? null : clean(n(m.desat_trip_us, "Q14", 2 * s));
         if (trip === null || trip > b.desat_window_us) put("Q14", null, "NOT_OBSERVED_IN_WINDOW");
         else put("Q14", trip);
         break;
@@ -110,6 +124,14 @@ window.IGBT.engine = (function () {
   // ---- 03 §8 rule evaluation ----
   function dp(rule) { var d = D().display_decimals[rule.quantity_id]; return d === undefined ? 2 : d; }
   function valText(rule, x) { return typeof x === "number" ? fmt.fixed(x, dp(rule)) : String(x); }
+  // A judged value at display precision, or at full precision when rounding would make it read
+  // the same as a limit it differs from (3.20004 V > max 3.20 V, not 3.20 V > max 3.20 V)
+  function xText(rule, x) {
+    if (typeof x !== "number") return String(x);
+    var t = valText(rule, x);
+    var hidden = [rule.min, rule.max].some(function (l) { return typeof l === "number" && l !== x && valText(rule, l) === t; });
+    return hidden ? fmt.num(x) : t;
+  }
   function unitText(rule) { return rule.unit === "bool" ? "" : " " + rule.unit; }
   function chips(rule) {
     if (rule.rule_type === "info") return "";
@@ -121,9 +143,9 @@ window.IGBT.engine = (function () {
   function margin(rule, x) {
     if (typeof x !== "number") return null;
     switch (rule.rule_type) {
-      case "window": return (typeof rule.min === "number" && typeof rule.max === "number") ? r4(Math.min(x - rule.min, rule.max - x)) : null;
-      case "max": case "time_max": return typeof rule.max === "number" ? r4(rule.max - x) : null;
-      case "min": return typeof rule.min === "number" ? r4(x - rule.min) : null;
+      case "window": return (typeof rule.min === "number" && typeof rule.max === "number") ? Math.min(diff(x, rule.min), diff(rule.max, x)) : null;
+      case "max": case "time_max": return typeof rule.max === "number" ? diff(rule.max, x) : null;
+      case "min": return typeof rule.min === "number" ? diff(x, rule.min) : null;
     }
     return null;
   }
@@ -136,7 +158,7 @@ window.IGBT.engine = (function () {
     if (observation === "NOT_MEASURED") {
       return { verdict: "NOT RUN", margin: null, reason: label + ": not measured (stage " + (opts.not_run_status || "not executed") + ")" };
     }
-    var xs = valText(rule, x), pass, reason;
+    var xs = xText(rule, x), pass, reason;
     switch (rule.rule_type) {
       case "info":
         return { verdict: "INFO", margin: null, reason: label + " " + xs + u + " (info; not judged)" };
@@ -374,7 +396,7 @@ window.IGBT.engine = (function () {
   }
 
   return {
-    round: round, r2: r2, r4: r4, secText: secText,
+    clean: clean, round: round, r2: r2, secText: secText,
     stageDef: stageDef, rulesFor: rulesFor, refEntry: refEntry, chips: chips, valText: valText,
     conditionsFor: conditionsFor, driverPowered: driverPowered, gateMeasured: gateMeasured,
     measure: measure, evaluateRule: evaluateRule, buildReading: buildReading,

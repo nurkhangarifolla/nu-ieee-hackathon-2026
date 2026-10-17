@@ -16,6 +16,7 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | 01b | Design pass: `DESIGN.md` (NVIDIA style) applied to banner, header, Setup, 1a, 1b | – | **Done** (selfcheck 28/28; screenshots in `design/screenshots/`) |
 | 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Done** (S0 matches 03 §12; AC-02 diff empty; AC-12 in headless Chrome over `file://`, offline; selfcheck 59/59; Nurkhan's own-browser check still to do) |
 | 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report + Report screen | M2 17:30 | **Done** (every §12 cell matches, AC-11 table; selfcheck 133/133 in node and headless Chrome; AC-02 diffs empty; PDFs carry banner and footer on every page; Nurkhan's own-browser check still to do) |
+| 03b | Independent-review fixes: judge at full precision, complete rule sets, T10 timing with a long verify delay | M2 17:30 | **Done** (v0.3.1; all three probes fixed; selfcheck 174/174 in node and headless Chrome from the unzipped package; AC-11 unchanged; three Pending Said entries) |
 | 04 | Custom (AC-03), AC-14 set, AC-01 on a second laptop | M3 18:30 | Not written |
 
 ## Builder standing brief
@@ -259,4 +260,37 @@ Done when:
 - Both greps from TICKET 02 return nothing.
 Commit "TICKET 03: S1–S8 checks, HTML report, Report screen". Report in the standing format,
 with the AC-11 table.
+```
+
+## TICKET 03b
+
+Run this in Claude Code from `/Users/nurhangarifolla/Hackathon /`. Source: an independent review of
+TICKET 03 (all 133 checks passed; three extra probes found defects).
+
+```
+TICKET 03b: Independent-review fixes (no new features)
+
+Hard rules: as TICKETS 01–03. Preserve every threshold and every 03 §12 outcome. Each fix
+changes verdict or timing logic, so log each in Decisions.md as "Pending Said".
+
+1. engine.js: judge readings at full precision; round for display only. Only binary
+   floating-point noise is removed (12 significant digits: 2.4000000000000004 → 2.4).
+   The same goes for the safe-state decisions (discharge required, verification).
+   r_ce_mohm = 11.0002 (Q09 = 3.20004 V), diode_fwd_v = 0.19999, desat_trip_us = 10.00001
+   must each FAIL. When display rounding would make a value read like the limit it fails,
+   show it at full precision (3.20004 V > max 3.20 V).
+2. validate.js: a profile must carry exactly one rule for each modelled quantity (03 §6),
+   on its stage, with its rule type, unit and required flag; no other rules. The list of
+   modelled quantities goes in data.js. Missing Q09 or rules: [] → validation error, no run.
+3. sequencer.js: when verify_delay_s is longer than the T10 DWELL, add a COMPUTED component
+   for the extra wait, so T10's components, the final event time and physical_total_s agree.
+
+Done when:
+- Regression checks in selfcheck.html for each probe (incl. the stage-to-quantity mapping
+  in engine.js matching the data.js list, and RUN_END time = physical_total_s = sum of stage
+  estimates over a sweep of verify_delay_s and abort times) all PASS.
+- The existing suite still passes in node and in headless Chrome; the AC-11 table still
+  matches every cell; AC-02 diffs empty; both greps empty.
+- Packaged zip (no dev/) rebuilt and handed over with the results.
+Commit "TICKET 03b: review fixes (full-precision verdicts, complete rule sets, T10 timing)".
 ```

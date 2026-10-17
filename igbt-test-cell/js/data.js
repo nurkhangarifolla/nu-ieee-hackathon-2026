@@ -111,6 +111,29 @@ window.APP_DATA = (function () {
       R("Q18", "T10", "Gate voltage after OFF command", "V", "max", null, -10, null, "INVENTED_TOLERANCE", "REF-03", "\"Reached OFF\" threshold is ours")
     ];
   }
+  // The quantities the engine computes (03 §6), each with its stage, rule type and unit (05 §3.3)
+  // and its `required` flag (true for every non-info rule, Pending Said). Every profile must
+  // carry exactly one rule for each, and no other rules (validate.js).
+  var modelled_quantities = [
+    { quantity_id: "Q01", test_id: "T01", rule_type: "window", unit: "V", required: true },
+    { quantity_id: "Q02", test_id: "T01", rule_type: "boolean", unit: "bool", required: true },
+    { quantity_id: "Q03", test_id: "T02", rule_type: "max", unit: "W", required: true },
+    { quantity_id: "Q03b", test_id: "T02", rule_type: "window", unit: "W", required: true },
+    { quantity_id: "Q04", test_id: "T02", rule_type: "max", unit: "W", required: true },
+    { quantity_id: "Q05", test_id: "T03", rule_type: "boolean", unit: "bool", required: true },
+    { quantity_id: "Q06", test_id: "T03", rule_type: "window", unit: "V", required: true },
+    { quantity_id: "Q07", test_id: "T03", rule_type: "window", unit: "V", required: true },
+    { quantity_id: "Q10", test_id: "T06", rule_type: "window", unit: "V", required: true },
+    { quantity_id: "Q08", test_id: "T04", rule_type: "max", unit: "mA", required: true },
+    { quantity_id: "Q09", test_id: "T05", rule_type: "max", unit: "V", required: true },
+    { quantity_id: "Q11", test_id: "T07", rule_type: "max", unit: "mA", required: true },
+    { quantity_id: "Q16", test_id: "T08a", rule_type: "info", unit: "µs", required: false },
+    { quantity_id: "Q12", test_id: "T08a", rule_type: "max", unit: "A/µs", required: true },
+    { quantity_id: "Q13", test_id: "T08a", rule_type: "max", unit: "V", required: true },
+    { quantity_id: "Q14", test_id: "T09", rule_type: "time_max", unit: "µs", required: true },
+    { quantity_id: "Q18", test_id: "T10", rule_type: "max", unit: "V", required: true }
+  ];
+
   // Same rules, every limit null (05 §3: listed with null limits for display)
   function unconfiguredRules() {
     return demoRules().map(function (r) {
@@ -290,11 +313,12 @@ window.APP_DATA = (function () {
 
   return {
     schema_version: "0.3",
-    software_version: "0.3.0",
+    software_version: "0.3.1",
     case_references: case_references,
     module_defaults: module_defaults,
     module_parameter_units: module_parameter_units,
     bench_parameter_units: bench_parameter_units,
+    modelled_quantities: modelled_quantities,
     profiles: profiles,
     scenarios: scenarios,
     built_priorities: built_priorities,

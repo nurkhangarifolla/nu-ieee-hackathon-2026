@@ -223,7 +223,7 @@ window.IGBT.sequencer = (function () {
     var inp = run.inputs, b = inp.bench_conditions, m = inp.module_parameters;
     var i = stageIndex(run, CLOSING_STAGE), st = run.stages[i];
     var t0 = r2(run.t);
-    var v0 = r2(busVoltage(run, t0));
+    var v0 = E.clean(busVoltage(run, t0));   // judged at full precision (discharge required?)
     run.state = "SAFE_STATE_PROCEDURE";
     st.status = "RUNNING";
     st.status_note = "safe-state procedure; trigger " + trigger;
@@ -260,7 +260,7 @@ window.IGBT.sequencer = (function () {
       dischargeS = r2(ts.value); verifyOffset = r2(dischargeS + b.verify_delay_s); dischargeTime = dischargeS;
       vVerify = pathOk ? M.decay(v0, ts.value + b.verify_delay_s, b.bleeder_r_kohm, b.dclink_c_mf) : v0;
     }
-    vVerify = r2(vVerify);
+    vVerify = E.clean(vVerify);              // judged at full precision against v_safe_v
     var verification = !b.verify_meter_ok ? "VERIFICATION_UNAVAILABLE" : (vVerify <= b.v_safe_v ? "VERIFIED" : "DISCHARGE_FAILED");
     D().physical_components[CLOSING_STAGE].forEach(function (c) {
       var s = c.compute === "discharge" ? dischargeS : c.seconds;
@@ -269,7 +269,15 @@ window.IGBT.sequencer = (function () {
         : c.note;
       comps.push({ basis: c.basis, seconds: s, note: note });
     });
-    var endOffset = Math.max(E.sumSeconds(comps), verifyOffset);
+    // Verification normally falls inside the closing DWELL. If verify_delay_s pushes it past the
+    // planned end, the extra wait is its own COMPUTED component, so T10's components, the final
+    // event time and physical_total_s stay equal.
+    var planned = E.sumSeconds(comps);
+    if (verifyOffset > planned) {
+      comps.push({ basis: "COMPUTED", seconds: r2(verifyOffset - planned),
+                   note: "verification wait beyond the closing DWELL (verify_delay_s = " + num(b.verify_delay_s) + " s)" });
+    }
+    var endOffset = E.sumSeconds(comps);
     st.model_equation = ts.equation + "; " + en.equation;
     run.safe = {
       trigger: trigger, t0: t0, v0: v0, required: required, path_ok: pathOk,

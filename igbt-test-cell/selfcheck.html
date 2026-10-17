@@ -179,10 +179,11 @@ window.IGBT.selfcheck = (function () {
     var r = reading("Q09"), want = "V_CE(sat) = 1.00 V + 0.007 Ω × 200 A = 2.40 V";
     return { pass: r.model_equation === want, detail: r.model_equation };
   });
-  add("S0 safe-state block: v0 600 V, discharge 24.85 s, verified 40.94 V, SAFE", function () {
+  // Voltages are stored at full precision; 03 §12 gives them to display precision (2 dp)
+  add("S0 safe-state block: v0 600 V, discharge 24.85 s, verified 40.94 V (2 dp), SAFE", function () {
     var ss = det().safe_state;
     var ok = ss && ss.trigger === "NORMAL_COMPLETION" && ss.v_bus_at_start_v === 600 && ss.discharge_required === true && ss.discharge_time_s === 24.85 &&
-      ss.v_bus_at_verification_v === 40.94 && ss.verification === "VERIFIED" && ss.door === "UNLOCKED" && ss.final_state === "SAFE" &&
+      window.IGBT.engine.r2(ss.v_bus_at_verification_v) === 40.94 && ss.verification === "VERIFIED" && ss.door === "UNLOCKED" && ss.final_state === "SAFE" &&
       ss.gate_measured_v === -15 && ss.gate_off_confirmed === true;
     return { pass: !!ok, detail: JSON.stringify(ss) };
   });
@@ -332,7 +333,8 @@ window.IGBT.selfcheck = (function () {
     if (!w) rows.push({ column: "Safe state", expected: "null", actual: JSON.stringify(ss), pass: ss === null });
     else {
       var dis = ss ? (ss.discharge_required ? (ss.discharge_time_s === null ? "NO_DECAY" : ss.discharge_time_s) : "NOT_REQUIRED") : null;
-      var gotS = ss ? [ss.trigger, "v0 " + ss.v_bus_at_start_v + " V", "discharge " + dis, "verified " + ss.v_bus_at_verification_v + " V", ss.verification, "door " + ss.door, ss.final_state].join(" · ") : "null";
+      var r2 = window.IGBT.engine.r2;   // voltages to display precision (2 dp), as 03 §12 gives them
+      var gotS = ss ? [ss.trigger, "v0 " + r2(ss.v_bus_at_start_v) + " V", "discharge " + dis, "verified " + r2(ss.v_bus_at_verification_v) + " V", ss.verification, "door " + ss.door, ss.final_state].join(" · ") : "null";
       var wantS = [w.trigger, "v0 " + w.v0 + " V", "discharge " + w.discharge, "verified " + w.verified_v + " V", w.verification, "door " + w.door, w.final].join(" · ");
       var okS = gotS === wantS;
       if (w.discharge === "NOT_REQUIRED") okS = okS && ev(d, "DISCHARGE_NOT_REQUIRED").length === 1 && ev(d, "DISCHARGE_START").length === 0;
@@ -448,6 +450,130 @@ window.IGBT.selfcheck = (function () {
         if (!tr || tr.indexOf(want) < 0) bad.push(e.seq);
       });
       return { pass: !bad.length, detail: bad.length ? "wrong rows: " + bad.join(", ") : r.deterministic.events.length + " events at speed " + sp };
+    });
+  });
+
+  // ---- TICKET 03b regression checks (independent review) ----
+  function customRun(mod, bench, stepper) {
+    var pre = V.configPreflight(setup({ scenario_id: "CUSTOM", custom_overrides: { module: mod || {}, bench: bench || {} } }));
+    if (pre.status !== "OK") return { pre: pre };
+    var r = SEQ.create(pre);
+    if (stepper) stepper(r); else SEQ.runToEnd(r);
+    return { pre: pre, run: r, report: REP.buildJson(r, { run_id: "RUN-SELFCHECK", operator: "selfcheck" }), d: REP.buildJson(r, {}).deterministic };
+  }
+  function abortAt(t) { return function (r) { SEQ.start(r); SEQ.advance(r, t); SEQ.abort(r, "OPERATOR"); SEQ.advance(r, Infinity); }; }
+
+  // 1. Readings are judged at full precision; display rounds (and never hides a FAIL)
+  [["r_ce_mohm", 11.0002, "Q09", 3.20004, "FAIL", -0.00004, "3.20004", "−0.00004 V"],
+   ["diode_fwd_v", 0.19999, "Q01", 0.19999, "FAIL", -0.00001, "0.19999", "−0.00001 V"],
+   ["desat_trip_us", 10.00001, "Q14", 10.00001, "FAIL", -0.00001, "10.00001", "−0.00001 µs"],
+   ["r_ce_mohm", 11.0, "Q09", 3.2, "PASS", 0, "3.20", "0.00 V"],
+   ["diode_fwd_v", 0.2, "Q01", 0.2, "PASS", 0, "0.20", "0.00 V"],
+   ["diode_fwd_v", 0.8, "Q01", 0.8, "PASS", 0, "0.80", "0.00 V"],
+   ["desat_trip_us", 10, "Q14", 10, "PASS", 0, "10.0", "0.0 µs"]
+  ].forEach(function (c) {
+    add("03b full precision: " + c[0] + " = " + c[1] + " → " + c[2] + " " + c[3] + " " + c[4] + " (shown " + c[6] + ")", function () {
+      var mod = {}; mod[c[0]] = c[1];
+      var x = customRun(mod);
+      if (!x.d) return { pass: false, detail: "preflight " + x.pre.status };
+      var r = readingIn(x.d, c[2]);
+      var ok = r.value === c[3] && r.verdict === c[4] && r.margin === c[5] && T().valueText(r) === c[6] && T().marginText(r) === c[7] &&
+        (c[4] === "PASS" || (x.d.overall.verdict === "FAIL" && r.reason.indexOf(c[6] + " ") >= 0));
+      return { pass: ok, detail: "value " + r.value + " · " + r.verdict + " · margin " + r.margin + " · shown " + T().valueText(r) + " / " + T().marginText(r) + " · overall " + x.d.overall.verdict + " · " + r.reason };
+    });
+  });
+  add("03b full precision: 'discharge required' judged on the unrounded bus voltage (50.004 V > v_safe 50.003 V)", function () {
+    // charge 0.100008 A into 1 mF = 100.008 V/s; abort 0.5 s after T07 starts (290 s) → v0 = 50.004 V
+    var x = customRun({}, { charge_current_a: 0.100008, v_safe_v: 50.003 }, abortAt(290.5));
+    if (!x.d) return { pass: false, detail: "preflight " + x.pre.status + " " + JSON.stringify(x.pre.errors) };
+    var ss = x.d.safe_state;
+    return { pass: ss.v_bus_at_start_v === 50.004 && ss.discharge_required === true && ev(x.d, "DISCHARGE_START").length === 1 && ss.verification === "VERIFIED",
+             detail: "v0 " + ss.v_bus_at_start_v + " V · required " + ss.discharge_required + " · " + ss.verification };
+  });
+  add("03b full precision: verification exactly at t_safe (verify_delay_s = 0) reads v_safe and is VERIFIED", function () {
+    var x = customRun({}, { verify_delay_s: 0 }), ss = x.d.safe_state;
+    return { pass: ss.v_bus_at_verification_v === 50 && ss.verification === "VERIFIED", detail: "v at verification " + ss.v_bus_at_verification_v + " V · " + ss.verification };
+  });
+
+  // 2. A profile must carry exactly one rule for each modelled quantity
+  function withoutRule(p, q) { p.rules = p.rules.filter(function (r) { return r.quantity_id !== q; }); return p; }
+  add("03b rule set: demo profile without Q09 rejected", function () { return rejects(V.validateProfile(withoutRule(demo(), "Q09")), "profile.demo.rules.Q09"); });
+  add("03b rule set: demo profile with rules [] rejected (one error per modelled quantity)", function () {
+    var p = demo(); p.rules = [];
+    var e = V.validateProfile(p);
+    return { pass: e.length === D.modelled_quantities.length && D.modelled_quantities.every(function (m) { return e.some(function (x) { return x.field === "profile.demo.rules." + m.quantity_id; }); }),
+             detail: e.length + " errors for " + D.modelled_quantities.length + " modelled quantities" };
+  });
+  add("03b rule set: Q09 moved to T07 rejected", function () { var p = demo(); rule(p, "Q09").test_id = "T07"; return rejects(V.validateProfile(p), "profile.demo.rules.Q09.test_id"); });
+  add("03b rule set: Q09 turned into an info rule rejected", function () {
+    var p = demo(), q = rule(p, "Q09"); q.rule_type = "info"; q.max = null; q.required = false; q.rule_basis = null; q.reference_id = null;
+    var e = V.validateProfile(p);
+    return { pass: e.some(function (x) { return x.field === "profile.demo.rules.Q09.rule_type"; }) && e.some(function (x) { return x.field === "profile.demo.rules.Q09.required"; }), detail: fmt(e) };
+  });
+  add("03b rule set: Q09 required = false rejected", function () { var p = demo(); rule(p, "Q09").required = false; return rejects(V.validateProfile(p), "profile.demo.rules.Q09.required"); });
+  add("03b rule set: Q09 unit changed rejected", function () { var p = demo(); rule(p, "Q09").unit = "mV"; return rejects(V.validateProfile(p), "profile.demo.rules.Q09.unit"); });
+  add("03b rule set: rule for an unmodelled quantity (Q99) rejected", function () {
+    var p = demo(), q = clone(rule(p, "Q09")); q.quantity_id = "Q99"; p.rules.push(q);
+    return rejects(V.validateProfile(p), "profile.demo.rules.Q99");
+  });
+  add("03b rule set: preflight with Q09 removed from the data, or rules [], gives INVALID (no run, no verdict)", function () {
+    var prof = V.findProfile("demo"), saved = prof.rules, a, b;
+    try {
+      prof.rules = saved.filter(function (r) { return r.quantity_id !== "Q09"; });
+      a = V.configPreflight(setup({ scenario_id: "S2" }));
+      prof.rules = [];
+      b = V.configPreflight(setup({ scenario_id: "S0" }));
+    } finally { prof.rules = saved; }
+    var after = V.configPreflight(setup({ scenario_id: "S0" }));
+    return { pass: a.status === "INVALID" && b.status === "INVALID" && after.status === "OK", detail: "without Q09: " + a.status + " · rules []: " + b.status + " · restored: " + after.status };
+  });
+  add("03b rule set: the engine computes exactly the data.js modelled quantities, stage by stage", function () {
+    var inputs = V.configPreflight(setup()).inputs, bad = [];
+    D.stages.forEach(function (st) {
+      var got = Object.keys(window.IGBT.engine.measure(st.test_id, inputs)).sort();
+      var want = D.modelled_quantities.filter(function (m) { return m.test_id === st.test_id; }).map(function (m) { return m.quantity_id; }).sort();
+      if (!eq(got, want)) bad.push(st.test_id + ": engine " + got.join(",") + " vs data " + want.join(","));
+    });
+    return { pass: !bad.length, detail: bad.length ? bad.join(" · ") : D.modelled_quantities.length + " quantities on " + D.stages.length + " stages agree" };
+  });
+
+  // 3. Timing: components, final event time and reported duration agree
+  function timing(d) {
+    var r2 = window.IGBT.engine.r2, last = d.events[d.events.length - 1], sum = 0, bad = [];
+    d.stages.forEach(function (s) {
+      sum += s.physical_estimate_s;
+      var c = r2(s.physical_components.reduce(function (a, x) { return a + x.seconds; }, 0));
+      if (c !== s.physical_estimate_s) bad.push(s.test_id + " components " + c + " ≠ " + s.physical_estimate_s);
+      var st = d.events.filter(function (e) { return e.stage === s.test_id && e.type === "STAGE_START"; })[0];
+      var en = d.events.filter(function (e) { return e.stage === s.test_id && e.type === "STAGE_END"; })[0];
+      if (st && en && r2(en.physical_time_s - st.physical_time_s) !== s.physical_estimate_s) bad.push(s.test_id + " events " + r2(en.physical_time_s - st.physical_time_s) + " ≠ " + s.physical_estimate_s);
+    });
+    sum = r2(sum);
+    if (last.type !== "RUN_END" || last.physical_time_s !== d.physical_total_s) bad.push("RUN_END " + last.physical_time_s + " ≠ total " + d.physical_total_s);
+    if (sum !== d.physical_total_s) bad.push("sum " + sum + " ≠ total " + d.physical_total_s);
+    return { ok: !bad.length, text: "RUN_END " + last.physical_time_s + " s · total " + d.physical_total_s + " s · sum " + sum + " s" + (bad.length ? " · " + bad.join("; ") : "") };
+  }
+  add("03b timing: verify_delay_s = 30 → T10 gets a 10 s COMPUTED wait; RUN_END = total = 509.85 s", function () {
+    var x = customRun({}, { verify_delay_s: 30 }), t = timing(x.d), t10 = x.d.stages.filter(function (s) { return s.test_id === "T10"; })[0];
+    var extra = t10.physical_components.filter(function (c) { return c.basis === "COMPUTED" && /verification wait/.test(c.note); });
+    return { pass: t.ok && x.d.physical_total_s === 509.85 && extra.length === 1 && extra[0].seconds === 10, detail: t.text + " · T10: " + t10.physical_components.map(function (c) { return c.basis + " " + c.seconds; }).join(" + ") };
+  });
+  [0, 2, 19.99, 20, 20.01, 30, 100].forEach(function (vd) {
+    [["S0 bench", {}], ["no discharge (S1 module)", { diode_fwd_v: 0.0, diode_reverse_open: false }]].forEach(function (k) {
+      add("03b timing: " + k[0] + ", verify_delay_s = " + vd + " → components, RUN_END and total agree", function () {
+        var x = customRun(k[1], { verify_delay_s: vd }), t = timing(x.d);
+        return { pass: t.ok, detail: t.text };
+      });
+    });
+  });
+  add("03b timing: failed discharge with verify_delay_s = 30 still verifies at the timeout; total 595 s", function () {
+    var x = customRun({}, { verify_delay_s: 30, discharge_path_ok: false }), t = timing(x.d);
+    return { pass: t.ok && x.d.physical_total_s === 595, detail: t.text };
+  });
+  [10, 150.5, 290.5, 300, 365, 410.37, 454.99].forEach(function (at) {
+    add("03b timing: abort at " + at + " s (verify_delay_s 30) → components, RUN_END and total agree", function () {
+      var x = customRun({}, { verify_delay_s: 30 }, abortAt(at)), t = timing(x.d);
+      return { pass: t.ok && x.d.overall.verdict === "ABORTED", detail: t.text + " · " + x.d.overall.verdict };
     });
   });
 
