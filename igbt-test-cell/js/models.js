@@ -27,7 +27,7 @@ window.IGBT.models = (function () {
   // Overshoot (T08a): V_peak = v_dc_test_v + l_stray_nh·1e-9 · didt_a_per_us·1e6
   function vPeak(v_dc_test_v, l_stray_nh, didt_a_per_us) {
     var v = v_dc_test_v + l_stray_nh * 1e-9 * didt_a_per_us * 1e6;
-    return { value: v, equation: "V_peak = " + num(v_dc_test_v) + " V + " + num(l_stray_nh) + " nH × " + num(didt_a_per_us) + " A/µs = " + num(Number(v.toFixed(4))) + " V" };
+    return { value: v, equation: "V_peak = " + num(v_dc_test_v) + " V + " + num(l_stray_nh) + " nH × " + num(Number(didt_a_per_us.toFixed(4))) + " A/µs = " + num(Number(v.toFixed(4))) + " V" };
   }
 
   // Bus charge (T07): t_charge = C · v_dc_test_v / charge_current_a (C in F from mF)

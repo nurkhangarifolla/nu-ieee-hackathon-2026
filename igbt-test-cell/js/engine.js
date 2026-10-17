@@ -70,6 +70,11 @@ window.IGBT.engine = (function () {
     var m = inputs.module_parameters, b = inputs.bench_conditions;
     var s = inputs.noise_rel_sigma, seed = inputs.seed, out = {};
     function n(x, q, sigma) { return RNG.n(x, sigma === undefined ? s : sigma, seed, q); }
+    // Model equation plus the seeded-noise step when noise moved the value (σ = 0: unchanged)
+    function withNoise(eq, model, noisy, q, unit) {
+      if (!(s > 0) || clean(noisy) === clean(model)) return eq;
+      return eq + "; with seeded noise × " + RNG.factor(s, seed, q).toFixed(4) + " ≈ " + fmt.num(Number(noisy.toFixed(4))) + " " + unit;
+    }
     function put(q, v, obs, eq) {
       out[q] = { value: clean(v), observation: obs || "OBSERVED", model_equation: eq || null };
     }
@@ -96,7 +101,8 @@ window.IGBT.engine = (function () {
         break;
       case "T05":
         var vce = M.vceSat(m.vce0_v, m.r_ce_mohm, b.i_pulse_a);
-        put("Q09", n(vce.value, "Q09"), null, vce.equation);
+        var q09 = n(vce.value, "Q09");
+        put("Q09", q09, null, withNoise(vce.equation, vce.value, q09, "Q09", "V"));
         break;
       case "T07":
         put("Q11", n(m.ices_ma, "Q11"));

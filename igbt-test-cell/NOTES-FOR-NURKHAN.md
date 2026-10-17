@@ -6,12 +6,12 @@
 - **TICKETS 02–03 in your own browser (3 min).** I tested `file://` in headless Chrome with the network off (screenshots in `../design/screenshots/t02-*` and `t03-*`). The app's built-in browser pane can't run it: the folder name ends in a space, so the pane shows a static copy without scripts. Please double-click `index.html` once with Wi-Fi off: run S0 and press Abort during T08a; then run S8 → VIEW RESULT → VIEW REPORT → Print / Save PDF and check every PDF page has the yellow banner and the black footer. Check the console is clean.
 - **Abort and then a failed discharge (TICKET 02, Pending Said).** If a run is aborted *and* the safe state is then not verified, `abort_reason` keeps the trigger (e.g. `OPERATOR`) and the label is the "safe state not verified; enclosure kept locked" one. 05 §7 allows one reason only. Only reachable by aborting S8 by hand.
 
-- **AC-01 on a second laptop (TICKET 04, M3 18:30, about 10 min).** Copy `dist/igbt-test-cell-v0.4.0.zip` to another laptop (USB or cloud). SHA-256 `c2fe96b57579f060bfcd58aaf500d11dcc15eac71890bacadcb9a9fcfad39d05`. Then:
+- **AC-01 on a second laptop (TICKET 04, M3 18:30, about 10 min).** Use the newest package: `dist/igbt-test-cell-v0.5.0.zip` (TICKET 05; replaces v0.4.0). SHA-256 `47fd8613249e08eb0efd54d0174de98c1d587d4f609cfd8b80551a1c2c9f1306`. Copy it to another laptop (USB or cloud). Then:
   1. Turn Wi-Fi off. Unzip anywhere and double-click `igbt-test-cell/index.html` (Chrome or Edge).
-  2. Check the yellow banner and `v0.4.0` in the footer.
+  2. Check the yellow banner and `v0.5.0` in the footer.
   3. Run S0 at 16×: CONTINUE → START → VIEW RESULT (overall PASS, 499.85 s). Download JSON.
   4. VIEW REPORT → Download HTML → Print / Save PDF. Check the yellow banner and black footer on every PDF page.
-  5. Open `selfcheck.html`: it should say `Total: 198 / 198 PASS`.
+  5. Open `selfcheck.html`: it should say `Total: 222 / 222 PASS` (takes a second or two: it runs 1000-seed noise sweeps).
   6. Press F12 → Console: no red errors.
   7. Record a screen clip, plus the laptop model, OS and browser with version (03 §13 asks for these). Tell me, and I'll log it.
   Repeat on the presentation laptop on 18 Oct 08:00 (04 §3).
@@ -70,3 +70,14 @@
 - **AC-15 added here.** It's P0 and no ticket covered it. Setting `i_pulse_a` 300 A and `v_dc_test_v` 700 V in the in-memory data file updates conditions, equations and values. Q09 = 3.10 V, Q16 = 128.57 µs, Q13 = 880 V, t_charge 7 s, v0 700 V, t_safe 26.39 s, E 245 J, total 501.39 s, and no "200 A" or "600 V" is left in the JSON or HTML. The expected numbers are worked out by hand from 02 §8. Checks only; no app change.
 - **Version 0.4.0** (metadata and footer only). Every deterministic section (S0–S5, S8) is byte-identical to v0.3.1, and the HTML reports differ only in the version string.
 - **AC-01 proxy** on this Mac: unzipped v0.4.0 into a folder with a space in its name, then ran headless Chrome 155 offline over `file://`. Custom 7/12 and S0 went Setup → Report, with JSON + HTML downloads and a 9-page PDF. selfcheck showed 198/198, with no console errors and no network requests. This doesn't replace the second-laptop run (see "Needs your decision").
+
+### TICKET 05 (P1: seeded noise, S8b, noise toggle)
+- **Seeded noise built (02 §10 SUGGEST).** `rng.js`: value = x · (1 + σ·z). The sub-seed is the FNV-1a 32-bit hash of `"<seed>:<quantity_id>"`, fed to mulberry32 and then Box–Muller. z is truncated at ±3 by drawing again (not by clamping). Each reading starts a fresh generator, so a value depends only on σ, seed and quantity, never on call order. Q14 uses 2σ (±6%), as 03 §6 says.
+- **Setup "Noise" select.** Off (σ = 0) is the default; On sets bench `noise_rel_sigma` = 0.01 (`data.js noise_on_sigma`). It shows up in "Overrides" and in run meta. With noise on, the Result screen and the HTML report add a line saying the 03 §12 values assume σ = 0. A non-boolean `setup.noise` is a validation error. A Custom bench override above 0.05 is rejected (05 §2.1).
+- **Noise off changes nothing.** Every deterministic section and HTML report (S0–S5, S8, S8b, Custom 7/12) is byte-identical to v0.4.0, apart from the version string. The PRNG is never called.
+- **N1–N3 (AC-16) pass.** N1: S0 PASS for 1000/1000 seeds. N2: S2 Q09 FAIL for 1000/1000 seeds; the lowest is 3.3061 V (the bound is 3.298 V). N3: each seed's crossing lies between 10.554 and 11.454 mΩ, inside 10.534–11.495, and the engine confirms it on both sides. 10.00–10.53 mΩ PASS and 11.50–12.00 mΩ FAIL for every seed. At 11.00 mΩ, 475 seeds PASS and 525 FAIL.
+- **Q09 equation with noise:** "… = 2.40 V; with seeded noise × 1.0129 ≈ 2.431 V". The "≈" is there because the factor is shown to 4 dp. The V_peak equation shows di/dt to 4 dp (a noisy di/dt has many digits). Display only.
+- **Bench panel gate value** now uses the same sub-seed as its reading (Q06 ON, Q07 OFF, Q18 at SS3), so it matches the reading with noise on. Display only; it was "gate".
+- **S8b enabled** (`built_priorities` P0 + P1). The engine already matched 03 §12, so this adds the AC-17 checks: the §12 row, AC-02, AC-12, the HTML checks, and the event order VERIFICATION_UNAVAILABLE → FAULT_LOCKED with no DOOR_UNLOCKED. 03 §12 gives no v0 or SS8 bus figure for S8b. The check uses 600 V and 40.94 V from 03 §6 (Pending Said: see Decisions.md).
+- **Version 0.5.0.** Selfcheck 222/222 in node and in headless Chrome from the unzipped zip. Screenshots are `design/screenshots/t05-*`. The noise-on S0 and S8b JSON downloaded in Chrome are byte-identical to node runs.
+- **Next P1 slice (TICKET 06, not written):** bus-voltage gauge and a labelled synthetic T08a waveform.

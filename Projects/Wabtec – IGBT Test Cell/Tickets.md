@@ -18,6 +18,7 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report + Report screen | M2 17:30 | **Done** (every §12 cell matches, AC-11 table; selfcheck 133/133 in node and headless Chrome; AC-02 diffs empty; PDFs carry banner and footer on every page; Nurkhan's own-browser check still to do) |
 | 03b | Independent-review fixes: judge at full precision, complete rule sets, T10 timing with a long verify delay | M2 17:30 | **Done** (v0.3.1; all three probes fixed; selfcheck 174/174 in node and headless Chrome from the unzipped package; AC-11 unchanged; three Pending Said entries) |
 | 04 | Custom (AC-03), AC-14 messages, AC-15, AC-01 package + checklist | M3 18:30 | **Done** (v0.4.0; selfcheck 198/198 in node and headless Chrome from the unzipped zip; AC-03 screenshots; AC-14 messages table; AC-15 checks; AC-11 unchanged; AC-01 on a second laptop still to do by Nurkhan) |
+| 05 | P1: seeded noise with N1–N3 (AC-16), S8b (AC-17), noise on/off on Setup | Before freeze 20:00 | **Done** (v0.5.0; selfcheck 222/222 in node and headless Chrome from the unzipped zip; N1 1000/1000, N2 1000/1000, N3 inside bounds; S8b matches 03 §12; noise off byte-identical to v0.4.0; one Pending Said) |
 
 ## Builder standing brief
 
@@ -345,4 +346,71 @@ Done when:
 - AC-02 diffs empty for S0–S5, S8 and Custom r_ce 12; both greps from TICKET 02 empty.
 - The real AC-01 (second laptop, Wi-Fi off) is Nurkhan's; checklist handed over.
 Commit "TICKET 04: Custom flip, AC-14 messages, AC-15, v0.4.0 package".
+```
+
+## TICKET 05
+
+Run this in Claude Code from `/Users/nurhangarifolla/Hackathon /`. The app lives in `igbt-test-cell/`.
+
+```
+TICKET 05: P1 seeded noise (N1–N3, AC-16), S8b (AC-17), noise on/off on Setup
+
+Context: P0 is done (TICKETS 01–04, M1–M3). This is the first P1 slice, in the 04 §1 order:
+seeded noise σ = 0.01 with selfcheck.html running N1–N3, and S8b. "Equation display with
+substituted values" exists since TICKET 02. The bus-voltage gauge and the labelled T08a
+waveform are the next P1 slice (TICKET 06). The engine already routes every noisy reading
+through rng.n(x, σ, seed, quantity_id) and already gives the S8b row in node.
+Specs: 02 §10, §11 (Setup: noise on/off, P1); 03 §6, §11, §12 (S8b row), §13 AC-02, AC-16,
+AC-17; 05 §2.1 (noise_rel_sigma 0 ≤ x ≤ 0.05), §4 (S8b). Look and feel: DESIGN.md.
+
+Hard rules
+- Everything from TICKETS 01–04 still holds (classic <script src>, offline, values verbatim,
+  no spec edits, no scenario ID in engine.js / models.js / sequencer.js).
+- σ = 0 stays the default. With noise off, every deterministic section (S0–S5, S8, S8b,
+  Custom r_ce 7 and 12) is byte-identical to v0.4.0, and the PRNG is never consulted.
+- No limit, σ, expected outcome or fixed text changes. If N1 or N2 fails, stop and log it in
+  Decisions.md as "Pending Said" (03 §11).
+
+1. rng.js: n(x, σ, seed, q) = x · (1 + σ·z), z standard Gaussian, truncated at ±3 (so ±3σ).
+   Per-quantity sub-seed = FNV-1a 32-bit hash of "<seed>:<quantity_id>"; mulberry32 from that
+   sub-seed; Box–Muller; redraw while |z| > 3 (02 §10 SUGGEST). Every call starts a fresh
+   generator from its sub-seed, so a value depends only on (x, σ, seed, quantity), never on
+   call order. Expose factor(σ, seed, q) = 1 + σ·z for the checks and the equation text.
+   prngCalls counts draws.
+2. data.js: noise_on_sigma 0.01 (02 §10); built_priorities P0 + P1 (enables S8b; P2 stays
+   "not built yet"); version 0.5.0.
+3. validate.js: setup.noise (optional boolean). true → preflight sets bench noise_rel_sigma to
+   noise_on_sigma (still validated against 05 §2.1); false or absent → the profile or override
+   value. Anything else is a validation error.
+4. engine.js: when noise moved Q09 away from the model value, the Q09 equation says so
+   ("… = 2.40 V; seeded noise × 1.0123 → 2.43 V"). σ = 0 text unchanged.
+5. ui.js + index.html: Setup "Noise" select, Off (σ = 0, default) / On (σ = 0.01; Q14 0.02).
+   Run meta, Result and the HTML report show the noise state; with noise on, a note says the
+   03 §12 values assume σ = 0. S8b selectable.
+6. selfcheck.html:
+   - AC-16 N1: σ = 0.01, S0 overall PASS for every seed 1…1000.
+   - AC-16 N2: σ = 0.01, S2 Q09 FAIL for every seed 1…1000 (lowest ≥ 3.298 V).
+   - AC-16 N3: Custom r_ce_mohm sweep, seeds 1…1000: 10.53 mΩ PASS and 11.50 mΩ FAIL for every
+     seed; every seed's crossing lies in [10.534, 11.495] mΩ; at 11.00 mΩ both verdicts occur.
+   - Noise basics: every factor within ±3σ (Q14 ±6%) over 1000 seeds; same seed → byte-identical
+     deterministic section; another seed → different readings; σ = 0 → no PRNG call;
+     setup.noise true → noise_rel_sigma 0.01 in the inputs; setup.noise "yes" → INVALID.
+   - AC-17: S8b in the 03 §12 table (all module stages PASS; discharge 24.85 s;
+     VERIFICATION_UNAVAILABLE; door LOCKED; FAULT_LOCKED; ABORTED (SAFE_STATE_NOT_VERIFIED);
+     499.85 s), plus its AC-02, AC-12 and HTML checks.
+7. dev/selfcheck-node.js: also print the AC-16 table (N1–N3) in Markdown.
+8. Package dist/igbt-test-cell-v0.5.0.zip (no dev/). Headless Chrome from the unzipped zip,
+   offline over file://: selfcheck count, S8b Setup → Report with FAULT_LOCKED, S0 with
+   noise on → Result shows the noise note, no console errors, no network requests.
+   Screenshots in design/screenshots/t05-*.
+
+Done when:
+- node dev/selfcheck-node.js: all cases PASS (give the count); AC-11 table unchanged; S8b row
+  matches 03 §12 (AC-17); AC-16 table: N1 1000/1000 PASS, N2 1000/1000 Q09 FAIL, N3 crossings
+  inside [10.534, 11.495] mΩ.
+- Noise off: deterministic sections byte-identical to v0.4.0 (S0–S5, S8, S8b, Custom 7/12).
+- Headless Chrome from the unzipped v0.5.0 zip: same selfcheck count as node; S8b and S0 noise-on
+  runs as above; no console errors; no network requests.
+- AC-02 diffs empty; both greps from TICKET 02 empty.
+Commit "TICKET 05: seeded noise (N1–N3), S8b, noise toggle, v0.5.0".
 ```

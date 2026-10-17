@@ -292,6 +292,7 @@ window.IGBT.validate = (function () {
     if (!isStr(s.module_id) || s.module_id.trim() === "") e.push(err("setup.module_id", s.module_id, "must not be empty"));
     if (!findScenario(s.scenario_id)) e.push(err("setup.scenario_id", s.scenario_id, "is not a known scenario"));
     if (!findProfile(s.profile_id)) e.push(err("setup.profile_id", s.profile_id, "is not a known profile"));
+    if (s.noise !== undefined && typeof s.noise !== "boolean") e.push(err("setup.noise", s.noise, "must be true (on) or false (off)"));
     return e;
   }
 
@@ -314,7 +315,8 @@ window.IGBT.validate = (function () {
   }
 
   // ---- configuration preflight (02 §4, 05 §2.3, §3) ----
-  // setup: { module_id, profile_id, scenario_id, seed, speed, operator, custom_overrides? }
+  // setup: { module_id, profile_id, scenario_id, seed, speed, operator, noise?, custom_overrides? }
+  // noise true → bench noise_rel_sigma = noise_on_sigma (02 §10 P1); false or absent → profile / override value
   function configPreflight(setup) {
     var errors = validateSetup(setup);
     var scenario = setup && findScenario(setup.scenario_id);
@@ -329,6 +331,7 @@ window.IGBT.validate = (function () {
     var moduleParams = merge(data().module_defaults, overrides && overrides.module);
     moduleParams.module_id = setup.module_id;
     var bench = merge(profile.bench_conditions, overrides && overrides.bench);
+    if (setup.noise === true) bench.noise_rel_sigma = data().noise_on_sigma;
     errors = errors.concat(validateModule(moduleParams));
     errors = errors.concat(validateBench(bench));
     errors = dedupe(errors);

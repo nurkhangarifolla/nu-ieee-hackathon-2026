@@ -18,7 +18,7 @@
 <body>
 <div id="sim-banner"></div>
 <main>
-  <h1>Self-check: validation, preflight, engine vs 03 §12, and reports</h1>
+  <h1>Self-check: validation, preflight, engine vs 03 §12, reports and seeded noise</h1>
   <p>Runs in this browser with the same scripts as <code>index.html</code>. The same checks run in node with <code>node dev/selfcheck-node.js</code>.</p>
   <div id="total"></div>
   <table><thead><tr><th>#</th><th>Case</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
@@ -119,9 +119,9 @@ window.IGBT.selfcheck = (function () {
     return { pass: r.status === "CONFIG_BLOCKED" && r.block_reason === "CONFIGURATION_PREFLIGHT", detail: "status " + r.status + ", block_reason " + r.block_reason };
   });
 
-  // Every P0 scenario's overrides valid, and preflight result as expected
-  D.scenarios.filter(function (s) { return s.priority === "P0"; }).forEach(function (s) {
-    add("P0 " + s.scenario_id + " overrides valid; preflight " + (s.force_profile ? "CONFIG_BLOCKED" : "OK"), function () {
+  // Every built (P0, P1) scenario's overrides valid, and preflight result as expected
+  D.scenarios.filter(function (s) { return D.built_priorities.indexOf(s.priority) >= 0; }).forEach(function (s) {
+    add(s.priority + " " + s.scenario_id + " overrides valid; preflight " + (s.force_profile ? "CONFIG_BLOCKED" : "OK"), function () {
       var e = V.validateOverrides(s.overrides);
       var r = V.configPreflight(setup({ scenario_id: s.scenario_id }));
       var want = s.force_profile ? "CONFIG_BLOCKED" : "OK";
@@ -276,9 +276,14 @@ window.IGBT.selfcheck = (function () {
           safe: null, verdict: "NOT EVALUATED", reason: "CONFIGURATION_PREFLIGHT", label: "NOT_EVALUATED", physical: 0 },
     S8: { stages: stages12({ T10: "DONE" }), values: [["Q18", -15.0, "PASS"]], timeout_s: 120,
           safe: { trigger: "NORMAL_COMPLETION", v0: 600, discharge: "NO_DECAY", verified_v: 600, verification: "DISCHARGE_FAILED", door: "LOCKED", final: "FAULT_LOCKED" },
-          verdict: "ABORTED", reason: "SAFE_STATE_NOT_VERIFIED", label: "ABORTED_SAFE_STATE", physical: 595 }
+          verdict: "ABORTED", reason: "SAFE_STATE_NOT_VERIFIED", label: "ABORTED_SAFE_STATE", physical: 595 },
+    // S8b (P1, AC-17). 03 §12 gives no v0 or bus figure at SS8 for S8b; 600 V and 40.94 V follow from 03 §6 as in S0
+    // (the bus decays normally; the meter cannot confirm it).
+    S8b: { stages: stages12({ T10: "DONE" }), values: [],
+          safe: { trigger: "NORMAL_COMPLETION", v0: 600, discharge: 24.85, verified_v: 40.94, verification: "VERIFICATION_UNAVAILABLE", door: "LOCKED", final: "FAULT_LOCKED" },
+          verdict: "ABORTED", reason: "SAFE_STATE_NOT_VERIFIED", label: "ABORTED_SAFE_STATE", physical: 499.85 }
   };
-  var S12_IDS = ["S0", "S1", "S2", "S3", "S4", "S5", "S8"];
+  var S12_IDS = ["S0", "S1", "S2", "S3", "S4", "S5", "S8", "S8b"];
 
   // One report per scenario: a run to the end, or the CONFIG_BLOCKED report
   function reportFor(id) {
@@ -721,6 +726,162 @@ window.IGBT.selfcheck = (function () {
     return { pass: a === b && V.findProfile("demo").bench_conditions.v_dc_test_v === 600, detail: a === b ? "identical" : "differ" };
   });
 
+  // ---- TICKET 05: seeded noise (03 §11 N1–N3, AC-16) and S8b (AC-17) ----
+  var E5 = window.IGBT.engine, SIGMA = D.noise_on_sigma, NSEEDS = 1000;
+  function noisySetup(extra) { var s = setup(extra); s.noise = true; return s; }
+  function noisyDet(extra) {
+    var pre = V.configPreflight(noisySetup(extra));
+    if (pre.status !== "OK") return null;
+    return REP.buildJson(SEQ.runToEnd(SEQ.create(pre)), {}).deterministic;
+  }
+  // T05 reading through the engine for Custom r_ce_mohm (seeded noise on); no full run needed
+  function q09At(rce, seed) {
+    var pre = V.configPreflight(noisySetup({ scenario_id: "CUSTOM", seed: seed, custom_overrides: { module: { r_ce_mohm: rce }, bench: {} } }));
+    return E5.measureStage("T05", pre.inputs, pre.rules)[0];
+  }
+  var q09Rule = rule(demo(), "Q09"), I_PULSE = demo().bench_conditions.i_pulse_a, VCE0 = D.module_defaults.vce0_v;
+  // r_ce_mohm at which the noisy Q09 sits exactly on the limit, for factor f
+  function crossing(f) { return (q09Rule.max / f - VCE0) / (I_PULSE / 1000); }
+  var N3_LO = crossing(1 + 3 * SIGMA), N3_HI = crossing(1 - 3 * SIGMA);   // ≈10.534 and ≈11.495 mΩ (03 §11)
+
+  var n1c = null, n2c = null, n3c = null;
+  function N1() {
+    if (n1c) return n1c;
+    var fails = [], sig = [];
+    for (var s = 1; s <= NSEEDS; s++) {
+      var d = noisyDet({ seed: s });
+      if (!d || d.overall.verdict !== "PASS") fails.push(s);
+      if (d && d.inputs.noise_rel_sigma !== SIGMA && sig.length < 3) sig.push(s);
+    }
+    return (n1c = { pass: fails.length === 0 && sig.length === 0, n: NSEEDS - fails.length, fails: fails, sig: sig });
+  }
+  function N2() {
+    if (n2c) return n2c;
+    var bad = [], low = Infinity, high = -Infinity;
+    for (var s = 1; s <= NSEEDS; s++) {
+      var d = noisyDet({ scenario_id: "S2", seed: s }), r = d && readingIn(d, "Q09");
+      if (!r || r.verdict !== "FAIL" || d.inputs.noise_rel_sigma !== SIGMA) { bad.push(s); continue; }
+      low = Math.min(low, r.value); high = Math.max(high, r.value);
+    }
+    var bound = 3.40 * (1 - 3 * SIGMA);   // 3.298 V (03 §11)
+    return (n2c = { pass: bad.length === 0 && low >= bound - 1e-9, n: NSEEDS - bad.length, bad: bad, low: low, high: high, bound: bound });
+  }
+  var N3_ALL_PASS = [10.00, 10.25, 10.50, 10.53], N3_ALL_FAIL = [11.50, 11.75, 12.00];
+  function N3() {
+    if (n3c) return n3c;
+    var out = { sweep: [], outside: [], lo: Infinity, hi: -Infinity, mid: { pass: 0, fail: 0 } };
+    N3_ALL_PASS.concat(N3_ALL_FAIL).forEach(function (rce) {
+      var want = N3_ALL_PASS.indexOf(rce) >= 0 ? "PASS" : "FAIL", n = 0;
+      for (var s = 1; s <= NSEEDS; s++) if (q09At(rce, s).verdict === want) n++;
+      out.sweep.push({ rce: rce, want: want, n: n });
+    });
+    for (var s = 1; s <= NSEEDS; s++) {
+      // the seed's crossing, confirmed by the engine on both sides (±0.001 mΩ)
+      var c = crossing(RNG.factor(SIGMA, s, "Q09"));
+      var below = q09At(Number((c - 0.001).toFixed(4)), s).verdict, above = q09At(Number((c + 0.001).toFixed(4)), s).verdict;
+      if (below !== "PASS" || above !== "FAIL" || c < N3_LO || c > N3_HI) out.outside.push(s);
+      out.lo = Math.min(out.lo, c); out.hi = Math.max(out.hi, c);
+      out.mid[q09At(11.00, s).verdict === "PASS" ? "pass" : "fail"]++;
+    }
+    out.pass = out.outside.length === 0 && out.sweep.every(function (x) { return x.n === NSEEDS; }) && out.mid.pass > 0 && out.mid.fail > 0 &&
+      N3_LO.toFixed(3) === "10.534" && N3_HI.toFixed(3) === "11.495";
+    return (n3c = out);
+  }
+  function n3Text(x) {
+    return "bounds " + N3_LO.toFixed(3) + "–" + N3_HI.toFixed(3) + " mΩ; seed crossings " + x.lo.toFixed(3) + "–" + x.hi.toFixed(3) + " mΩ (" +
+      (NSEEDS - x.outside.length) + "/" + NSEEDS + " inside, engine-confirmed); " +
+      x.sweep.map(function (s) { return s.rce.toFixed(2) + " mΩ " + s.want + " " + s.n + "/" + NSEEDS; }).join(", ") +
+      "; 11.00 mΩ: " + x.mid.pass + " PASS / " + x.mid.fail + " FAIL";
+  }
+  add("AC-16 N1: σ = " + SIGMA + ", S0 overall PASS for every seed 1…" + NSEEDS, function () {
+    var x = N1(); return { pass: x.pass, detail: x.n + "/" + NSEEDS + " PASS" + (x.fails.length ? "; failing seeds " + x.fails.slice(0, 10).join(", ") : "") + (x.sig.length ? "; σ not applied for seeds " + x.sig.join(", ") : "") };
+  });
+  add("AC-16 N2: σ = " + SIGMA + ", S2 Q09 FAIL for every seed 1…" + NSEEDS + " (lowest ≥ 3.40 × 0.97 = 3.298 V)", function () {
+    var x = N2(); return { pass: x.pass, detail: x.n + "/" + NSEEDS + " FAIL; Q09 range " + x.low.toFixed(4) + "–" + x.high.toFixed(4) + " V (bound " + x.bound.toFixed(3) + " V)" + (x.bad.length ? "; bad seeds " + x.bad.slice(0, 10).join(", ") : "") };
+  });
+  add("AC-16 N3: Custom r_ce_mohm sweep; every seed's PASS/FAIL crossing inside [≈10.534, ≈11.495] mΩ; seed-independent outside", function () {
+    var x = N3(); return { pass: x.pass, detail: n3Text(x) };
+  });
+  function ac16Table() {
+    var a = N1(), b = N2(), c = N3();
+    return [
+      { id: "N1", check: "σ = " + SIGMA + ", S0 PASS for every seed 1…" + NSEEDS, result: a.n + "/" + NSEEDS + " overall PASS", pass: a.pass },
+      { id: "N2", check: "σ = " + SIGMA + ", S2 fails Q09 for every seed 1…" + NSEEDS, result: b.n + "/" + NSEEDS + " Q09 FAIL; lowest " + b.low.toFixed(4) + " V > 3.2 V (bound 3.298 V)", pass: b.pass },
+      { id: "N3", check: "Custom r_ce_mohm sweep; crossing between ≈10.534 and ≈11.495 mΩ", result: n3Text(c), pass: c.pass }
+    ];
+  }
+
+  var NOISY_Q = ["Q01", "Q03", "Q04", "Q06", "Q07", "Q08", "Q09", "Q10", "Q11", "Q12", "Q18"];
+  add("Noise: every factor within ±3σ over seeds 1…" + NSEEDS + " (Q14 within ±6%, σ = 0.02); spread ≈ σ", function () {
+    var bad = [], info = [];
+    NOISY_Q.concat(["Q14"]).forEach(function (q) {
+      var sg = q === "Q14" ? 2 * SIGMA : SIGMA, mn = Infinity, mx = -Infinity, ss = 0;
+      for (var s = 1; s <= NSEEDS; s++) { var f = RNG.factor(sg, s, q); mn = Math.min(mn, f); mx = Math.max(mx, f); ss += (f - 1) * (f - 1); }
+      var sd = Math.sqrt(ss / NSEEDS);
+      if (mn < 1 - 3 * sg - 1e-12 || mx > 1 + 3 * sg + 1e-12 || sd < 0.9 * sg || sd > 1.1 * sg) bad.push(q);
+      if (q === "Q09" || q === "Q14") info.push(q + " " + mn.toFixed(4) + "–" + mx.toFixed(4) + ", sd " + sd.toFixed(4));
+    });
+    return { pass: bad.length === 0, detail: (bad.length ? "out of bounds: " + bad.join(", ") + "; " : "") + info.join("; ") };
+  });
+  add("Noise: a value depends only on (σ, seed, quantity), not on call order; another seed gives another value", function () {
+    var a = RNG.factor(SIGMA, 7, "Q09"); RNG.factor(SIGMA, 8, "Q12"); RNG.factor(SIGMA, 7, "Q01");
+    var b = RNG.factor(SIGMA, 7, "Q09"), c = RNG.factor(SIGMA, 8, "Q09"), d = RNG.factor(SIGMA, 7, "Q11");
+    return { pass: a === b && a !== c && a !== d && RNG.factor(0, 7, "Q09") === 1, detail: "seed 7 Q09 " + a + " / " + b + "; seed 8 Q09 " + c + "; seed 7 Q11 " + d };
+  });
+  add("Noise: σ = 0 run adds no PRNG call; noise-on run does", function () {
+    var c0 = RNG.prngCalls(); reportFor("S0"); var c1 = RNG.prngCalls(); noisyDet({}); var c2 = RNG.prngCalls();
+    return { pass: c1 === c0 && c2 > c1, detail: "σ = 0: +" + (c1 - c0) + " calls; σ = " + SIGMA + ": +" + (c2 - c1) + " calls" };
+  });
+  add("Noise: Setup noise on → inputs noise_rel_sigma " + SIGMA + "; shown in Overrides and the noise text", function () {
+    var pre = V.configPreflight(noisySetup({})), off = V.configPreflight(setup({ noise: false }));
+    var ov = T().overridesText(pre.inputs), nt = T().noiseText(pre.inputs);
+    return { pass: pre.status === "OK" && pre.inputs.noise_rel_sigma === SIGMA && pre.inputs.bench_conditions.noise_rel_sigma === SIGMA &&
+                   off.inputs.noise_rel_sigma === 0 && ov.indexOf("bench.noise_rel_sigma = " + SIGMA) >= 0 && /σ = 0\.01 .*seed 20261018.*assume σ = 0/.test(nt) && T().noiseText(off.inputs) === "off (σ = 0)",
+             detail: "on: " + pre.inputs.noise_rel_sigma + " · overrides: " + ov + " · " + nt };
+  });
+  add("Noise: setup.noise = \"yes\" → INVALID (setup.noise); Custom bench noise_rel_sigma 0.06 → INVALID (05 §2.1)", function () {
+    var a = V.configPreflight(setup({ noise: "yes" }));
+    var b = V.configPreflight(setup({ scenario_id: "CUSTOM", custom_overrides: { module: {}, bench: { noise_rel_sigma: 0.06 } } }));
+    var ra = invalid(a, "setup.noise"), rb = invalid(b, "bench.noise_rel_sigma");
+    return { pass: ra.pass && rb.pass, detail: ra.detail + " || " + rb.detail };
+  });
+  add("Noise on: same seed twice → byte-identical deterministic sections (AC-02); seeds 1 and 2 differ", function () {
+    var a = JSON.stringify(noisyDet({})), b = JSON.stringify(noisyDet({})), c = JSON.stringify(noisyDet({ seed: 1 })), e = JSON.stringify(noisyDet({ seed: 2 }));
+    return { pass: a === b && c !== e, detail: (a === b ? "identical" : "differ") + "; seed 1 vs 2 " + (c !== e ? "differ" : "identical") };
+  });
+  add("Noise on (seed 20261018): Q09 equation states the noise factor; readings move, timings and safe state do not", function () {
+    var d = noisyDet({}), base = det(), r = readingIn(d, "Q09");
+    var f = RNG.factor(SIGMA, 20261018, "Q09");
+    var eqOk = r.model_equation.indexOf("= 2.40 V; with seeded noise × " + f.toFixed(4) + " ≈ ") > 0;
+    // Q10 sits in T06, NOT_APPLICABLE at defaults (gate not accessible), so it has no value to move
+    var measured = NOISY_Q.filter(function (q) { return typeof readingIn(base, q).value === "number"; });
+    var moved = measured.filter(function (q) { return readingIn(d, q).value !== readingIn(base, q).value; }).length;
+    var same = d.physical_total_s === base.physical_total_s && JSON.stringify(d.safe_state.discharge_time_s) === JSON.stringify(base.safe_state.discharge_time_s) &&
+      JSON.stringify(d.events.map(function (e) { return [e.type, e.physical_time_s]; })) === JSON.stringify(base.events.map(function (e) { return [e.type, e.physical_time_s]; }));
+    return { pass: eqOk && measured.length === 10 && moved === measured.length && same && d.overall.verdict === "PASS",
+             detail: r.model_equation + " · " + moved + "/" + measured.length + " measured noisy readings moved · events and total " + (same ? "unchanged" : "CHANGED") + " · overall " + d.overall.verdict };
+  });
+  add("Noise on: Custom r_ce_mohm = 12 and S2 with the same seed give the same stages, overall and events (noise keyed on seed and quantity only)", function () {
+    var a = noisyDet({ scenario_id: "S2", seed: 42 }), b = noisyDet({ scenario_id: "CUSTOM", seed: 42, custom_overrides: { module: { r_ce_mohm: 12 }, bench: {} } });
+    function core(d) { return JSON.stringify([d.stages, d.overall, d.safe_state, d.events, d.physical_total_s]); }
+    return { pass: core(a) === core(b), detail: core(a) === core(b) ? "identical (Q09 " + readingIn(a, "Q09").value + " V)" : "differ" };
+  });
+  add("Noise on: HTML report Inputs carry σ, seed and the 03 §12 note", function () {
+    var pre = V.configPreflight(noisySetup({}));
+    var html = REP.buildHtml(REP.buildJson(SEQ.runToEnd(SEQ.create(pre)), { run_id: "RUN-SELFCHECK", operator: "selfcheck" }));
+    var ok = html.indexOf("0.01 — seeded noise on: σ = 0.01 multiplicative Gaussian (Q14 σ = 0.02), truncated at ±3σ, seed 20261018") >= 0 && html.indexOf("assume σ = 0") >= 0;
+    return { pass: ok, detail: ok ? "noise row present" : "noise row missing" };
+  });
+  add("AC-17 S8b: one VERIFICATION_UNAVAILABLE then FAULT_LOCKED; no DISCHARGE_VERIFIED / DISCHARGE_FAILED / DOOR_UNLOCKED; door LOCKED; report exportable", function () {
+    var r = rep("S8b"), d = r.deterministic;
+    var seq = d.events.filter(function (e) { return ["VERIFICATION_UNAVAILABLE", "FAULT_LOCKED"].indexOf(e.type) >= 0; }).map(function (e) { return e.type; });
+    var none = ["DISCHARGE_VERIFIED", "DISCHARGE_FAILED", "DOOR_UNLOCKED"].filter(function (t) { return ev(d, t).length; });
+    var html = REP.buildHtml(r);
+    var ok = eq(seq, ["VERIFICATION_UNAVAILABLE", "FAULT_LOCKED"]) && none.length === 0 && d.safe_state.door === "LOCKED" &&
+      d.safe_state.final_state === "FAULT_LOCKED" && ev(d, "DISCHARGE_START").length === 1 && html.indexOf(D.fixed_texts.fault_locked_banner) >= 0;
+    return { pass: ok, detail: seq.join(" → ") + "; unexpected: " + (none.join(", ") || "none") + "; door " + d.safe_state.door + "; HTML " + html.length + " chars" };
+  });
+
   function run() {
     return cases.map(function (c, i) {
       var r;
@@ -728,7 +889,7 @@ window.IGBT.selfcheck = (function () {
       return { n: i + 1, name: c.name, result: r.pass ? "PASS" : "FAIL", detail: r.detail };
     });
   }
-  return { run: run, s12Table: s12Table, ac14Table: ac14Table };
+  return { run: run, s12Table: s12Table, ac14Table: ac14Table, ac16Table: ac16Table };
 })();
 
 if (typeof document !== "undefined" && document.getElementById("rows")) {

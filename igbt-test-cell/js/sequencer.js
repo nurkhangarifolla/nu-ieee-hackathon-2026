@@ -68,7 +68,7 @@ window.IGBT.sequencer = (function () {
   function setGate(run, cmd, powered) {
     var m = run.inputs.module_parameters;
     run.gate_cmd = cmd || "OFF";
-    run.gate_meas_v = powered ? E.gateMeasured(m, run.gate_cmd, run.inputs.noise_rel_sigma, run.inputs.seed, "gate") : 0;
+    run.gate_meas_v = powered ? E.gateMeasured(m, run.gate_cmd, run.inputs.noise_rel_sigma, run.inputs.seed, run.gate_cmd === "ON" ? "Q06" : "Q07") : 0;
   }
 
   // ---- START (02 §4 PRECHECK → RUNNING): all interlocks must be OK ----
@@ -236,7 +236,7 @@ window.IGBT.sequencer = (function () {
     // SS3: read modelled gate voltage, evaluate Q18; continue either way
     st.readings = E.measureStage(CLOSING_STAGE, inp, run.rules);
     var q18 = st.readings[0];
-    var gateV = q18 ? q18.value : E.gateMeasured(m, "OFF", inp.noise_rel_sigma, inp.seed, "gate");
+    var gateV = q18 ? q18.value : E.gateMeasured(m, "OFF", inp.noise_rel_sigma, inp.seed, "Q18");
     run.gate_meas_v = gateV;
     var confirmed = !!q18 && q18.verdict === "PASS";
     emit(run, CLOSING_STAGE, confirmed ? "GATE_OFF_CONFIRMED" : "GATE_OFF_NOT_CONFIRMED",

@@ -343,6 +343,8 @@
       <label for="in-scenario">Scenario</label>
       <div><select id="in-scenario" name="scenario"></select><div id="scenario-overrides" class="muted field-note" aria-live="polite"></div></div>
       <label for="in-seed">Seed</label><input type="text" id="in-seed" name="seed" inputmode="numeric" autocomplete="off" spellcheck="false">
+      <label for="in-noise">Noise</label>
+      <div><select id="in-noise" name="noise"></select><div id="noise-note" class="muted field-note" aria-live="polite"></div></div>
       <label for="in-speed">Speed</label><select id="in-speed" name="speed"></select>
       <label for="in-operator">Operator</label><input type="text" id="in-operator" name="operator" autocomplete="off" placeholder="Name or initials…">
     </div>
@@ -480,6 +482,7 @@
     <h2 id="h-result" tabindex="-1">Result</h2>
     <div class="meta" id="result-meta"></div>
     <div class="meta" id="result-inputs"></div>
+    <div class="meta" id="result-noise" hidden></div>
 
     <div class="verdict-block">
       <div class="verdict-row"><span>Overall</span> <span id="result-verdict" class="verdict"></span></div>

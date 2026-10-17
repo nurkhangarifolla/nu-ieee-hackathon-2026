@@ -186,8 +186,11 @@ window.APP_DATA = (function () {
     S("CUSTOM", "P0", "Custom module parameters", null, { custom: true })
   ];
 
-  // Scenarios with an engine in this build (P0 only for now)
-  var built_priorities = ["P0"];
+  // Scenarios with an engine in this build: P0 and P1 (S8b). P2 stays "not built yet".
+  var built_priorities = ["P0", "P1"];
+
+  // 02 §10 P1: σ used when Setup turns noise on (Q14 uses 2σ, engine.js). Default stays 0 (05 §2.1).
+  var noise_on_sigma = 0.01;
 
   // 02 §6 stage order (MUST) and classes; names from the 03 §1 "Test" column,
   // excitation text from 02 §6.
@@ -313,7 +316,7 @@ window.APP_DATA = (function () {
 
   return {
     schema_version: "0.3",
-    software_version: "0.4.0",
+    software_version: "0.5.0",
     case_references: case_references,
     module_defaults: module_defaults,
     module_parameter_units: module_parameter_units,
@@ -322,6 +325,7 @@ window.APP_DATA = (function () {
     profiles: profiles,
     scenarios: scenarios,
     built_priorities: built_priorities,
+    noise_on_sigma: noise_on_sigma,
     stages: stages,
     physical_components: physical_components,
     conditions_templates: conditions_templates,

@@ -188,11 +188,18 @@ window.IGBT.report = (function () {
     return c;
   }
   function secText(x) { return F().fixed(x, 2) + " s"; }
+  // Noise state of a run (02 §10). σ = 0: off. σ > 0: seeded noise, with a note that 03 §12 assumes σ = 0.
+  function noiseText(inp) {
+    var s = inp.noise_rel_sigma;
+    if (!(s > 0)) return "off (σ = 0)";
+    return "on: σ = " + F().num(s) + " multiplicative Gaussian (Q14 σ = " + F().num(2 * s) + "), truncated at ±3σ, seed " + inp.seed +
+      ". Readings differ from the 03 §12 values, which assume σ = 0.";
+  }
   function statusText(s) { return String(s).replace(/_/g, " "); }
   function animationOf(physical, speed) { return E.r2(physical / speed); }
   var text = { numText: numText, unitOf: unitOf, valueText: valueText, ruleText: ruleText, marginText: marginText,
                chipTexts: chipTexts, secText: secText, statusText: statusText, animationOf: animationOf,
-               overridesText: overridesText };
+               overridesText: overridesText, noiseText: noiseText };
 
   // ---- HTML report (05 §10): one self-contained page; inline CSS, no script, no external URL ----
   function esc(s) {
@@ -327,7 +334,7 @@ window.IGBT.report = (function () {
       ["Module parameters", paramList(inp.module_parameters, D().module_parameter_units), true, "plain"],
       ["Bench conditions", paramList(inp.bench_conditions, D().bench_parameter_units), true, "plain"],
       ["Seed", String(inp.seed)],
-      ["Noise σ (noise_rel_sigma)", String(inp.noise_rel_sigma)],
+      ["Noise σ (noise_rel_sigma)", String(inp.noise_rel_sigma) + (inp.noise_rel_sigma > 0 ? " — seeded noise " + noiseText(inp) : "")],
       ["Speed", inp.speed + "×"]
     ])));
 

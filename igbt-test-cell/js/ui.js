@@ -119,7 +119,8 @@ window.IGBT.ui = (function () {
   function sec(x) { return F.fixed(x, 2) + " s"; }
   function runMeta(setup, inputs) {
     return setup.run_id + " · scenario " + inputs.scenario_id + " (" + inputs.scenario_name + ") · profile " + inputs.profile_id +
-      " · seed " + inputs.seed + " · speed " + inputs.speed + "× · operator " + setup.operator;
+      " · seed " + inputs.seed + " · noise " + (inputs.noise_rel_sigma > 0 ? "σ " + inputs.noise_rel_sigma : "off") +
+      " · speed " + inputs.speed + "× · operator " + setup.operator;
   }
 
   // ---- Screen 1: Setup ----
@@ -136,6 +137,9 @@ window.IGBT.ui = (function () {
     $("profile-forced").hidden = !forced;
     setBadge(effectiveProfileId());
     $("custom-panel").hidden = !(sc && sc.custom);
+    $("noise-note").textContent = $("in-noise").value === "on"
+      ? "Seeded noise per reading (truncated at ±3σ; same seed, same readings). The 03 §12 values assume σ = 0."
+      : "";
     var ov = $("scenario-overrides");
     ov.textContent = "";
     if (sc && !sc.custom) {
@@ -159,6 +163,9 @@ window.IGBT.ui = (function () {
     });
     var pSel = $("in-profile");
     D.profiles.forEach(function (p) { pSel.appendChild(el("option", { value: p.profile_id, text: p.profile_id })); });
+    var nSel = $("in-noise");
+    nSel.appendChild(el("option", { value: "off", text: "Off (σ = 0, default)" }));
+    nSel.appendChild(el("option", { value: "on", text: "On (σ = " + D.noise_on_sigma + "; Q14 σ = " + 2 * D.noise_on_sigma + ") · P1" }));
     var spSel = $("in-speed");
     D.speeds.forEach(function (s) { spSel.appendChild(el("option", { value: String(s), text: s + "×" })); });
 
@@ -169,7 +176,9 @@ window.IGBT.ui = (function () {
     spSel.value = String(V.findProfile("demo").bench_conditions.speed_default);
 
     buildCustomTable();
+    nSel.value = "off";
     scSel.addEventListener("change", refreshSetup);
+    nSel.addEventListener("change", refreshSetup);
     pSel.addEventListener("change", function () { state.userProfile = pSel.value; refreshSetup(); });
     $("btn-continue").addEventListener("click", onContinue);
     $("btn-reset-custom").addEventListener("click", function () { buildCustomTable(); });
@@ -238,7 +247,8 @@ window.IGBT.ui = (function () {
       scenario_id: $("in-scenario").value,
       seed: (typeof seed === "number" && isNaN(seed)) ? seedTxt : seed,
       speed: parseInt($("in-speed").value, 10),
-      operator: $("in-operator").value
+      operator: $("in-operator").value,
+      noise: $("in-noise").value === "on"
     };
     if (sc && sc.custom) setup.custom_overrides = readCustomOverrides();
     return setup;
@@ -504,6 +514,8 @@ window.IGBT.ui = (function () {
     var rep = state.report, det = rep.deterministic, o = det.overall;
     $("result-meta").textContent = runMeta(state.setup, det.inputs);
     $("result-inputs").textContent = "Overrides: " + REP.text.overridesText(det.inputs);
+    $("result-noise").hidden = !(det.inputs.noise_rel_sigma > 0);
+    $("result-noise").textContent = "Noise: " + REP.text.noiseText(det.inputs);
     var v = $("result-verdict");
     v.textContent = o.verdict; v.className = VERDICT_CLASS[o.verdict] || "verdict verdict-ne";
     $("result-label").textContent = o.verdict_label;
