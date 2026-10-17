@@ -166,6 +166,100 @@ window.APP_DATA = (function () {
   // Scenarios with an engine in this build (P0 only for now)
   var built_priorities = ["P0"];
 
+  // 02 §6 stage order (MUST) and classes; names from the 03 §1 "Test" column,
+  // excitation text from 02 §6.
+  var stages = [
+    { test_id: "T00", name: "Identification, visual, bench self-check", class: "NONE", excitation: "none (identification, self-check)" },
+    { test_id: "T01", name: "Terminal integrity and freewheeling-diode check", class: "LV-EXCITATION", excitation: "low-current diode check" },
+    { test_id: "T02", name: "Gate-driver supply behaviour", class: "LV-EXCITATION", excitation: "driver supply from GDPC emulator" },
+    { test_id: "T03", name: "Fibre command/status loop and gate levels", class: "LV-EXCITATION", excitation: "driver supply + optical commands" },
+    { test_id: "T06", name: "Gate threshold", class: "LV-EXCITATION", excitation: "low-current, low-voltage gate threshold (only if gate accessible)" },
+    { test_id: "T04", name: "Insulation leakage to baseplate", class: "HV-INSULATION", excitation: "insulation tester; separate source; does not charge the bus" },
+    { test_id: "T05", name: "Pulsed on-state voltage", class: "PULSED-CURRENT", excitation: "pulsed current source, low voltage; does not charge the bus" },
+    { test_id: "T07", name: "Blocking leakage at test voltage", class: "DC-BUS", excitation: "charges the virtual bus to v_dc_test_v" },
+    { test_id: "T08a", name: "Double pulse: DUT transistor switching", class: "DC-BUS", excitation: "double pulse, DUT transistor switching" },
+    { test_id: "T08b", name: "Double pulse: DUT diode reverse recovery", class: "DC-BUS", excitation: "double pulse, DUT diode reverse recovery — NOT_MODELLED in this build" },
+    { test_id: "T09", name: "Out-of-saturation protection response", class: "DC-BUS", excitation: "controlled protection-response check" },
+    { test_id: "T10", name: "Safe state and discharge verification", class: "CLOSING", excitation: "the safe-state procedure (02 §7)" }
+  ];
+
+  // 03 §7 estimated physical duration per stage (first-order, not measured).
+  // seconds: null = COMPUTED by the engine (T07 t_charge and its 30 s hold; T10 discharge).
+  var physical_components = {
+    T00: [{ basis: "HANDLING", seconds: 150, note: "mounting a ~25 kg part, connections, self-check" }],
+    T01: [{ basis: "DWELL", seconds: 10, note: "" }],
+    T02: [{ basis: "DWELL", seconds: 20, note: "" }],
+    T03: [{ basis: "DWELL", seconds: 20, note: "" }],
+    T06: [{ basis: "DWELL", seconds: 20, note: "only when applicable" }],
+    T04: [{ basis: "PLACEHOLDER", seconds: 60, note: "insulation dwell unknown" }],
+    T05: [{ basis: "DWELL", seconds: 30, note: "" }],
+    T07: [
+      { basis: "COMPUTED", seconds: null, compute: "t_charge", note: "t_charge" },
+      { basis: "DWELL", seconds: null, compute: "hold_to_total", total_s: 30, note: "30 − t_charge; total held at 30 s for consistency; if t_charge > 30 the DWELL is 0 and the total is t_charge" }
+    ],
+    T08a: [{ basis: "DWELL", seconds: 90, note: "2–3 current points" }],
+    T08b: [],   // NOT_MODELLED: 0 s in the simulation (proposal estimate PLACEHOLDER 30 s)
+    T09: [{ basis: "DWELL", seconds: 45, note: "" }],
+    T10: [
+      { basis: "COMPUTED", seconds: null, compute: "discharge", note: "discharge time (or discharge_timeout_s on failure)" },
+      { basis: "DWELL", seconds: 20, note: "verification, teardown, logging" }
+    ]
+  };
+
+  // 03 §6 conditions templates, per quantity; {field} is filled from the profile values
+  var conditions_templates = {
+    Q01: "low-current diode check, forward",
+    Q02: "low-current diode check, reverse",
+    Q03: "GDPC emulator {gdpc_text}; not switching",
+    Q03b: "GDPC emulator {gdpc_text}; not switching",
+    Q04: "GDPC emulator {gdpc_text}; switching, no HV",
+    Q05: "optical command → status",
+    Q06: "commanded ON",
+    Q07: "commanded OFF",
+    Q10: "small I_C, V_CE = V_GE",
+    Q08: "insulation test; test voltage and dwell unknown",
+    Q09: "I = {i_pulse_a} A pulse, gate commanded ON, ambient, Kelvin sense",
+    Q11: "V_CE = {v_dc_test_v} V, gate commanded OFF",
+    Q16: "t1 = L·I/V",
+    Q12: "V_bus = {v_dc_test_v} V, I = {i_pulse_a} A, L = {l_load_uh} µH",
+    Q13: "V_peak = V_bus + L_σ·di/dt, L_σ = {l_stray_nh} nH",
+    Q14: "current-limited fault emulation; window {desat_window_us} µs",
+    Q18: "after OFF command (safe-state SS3)"
+  };
+
+  // 03 §10 explanatory text on FAIL ("Hypothesis:", never a diagnosis)
+  var hypotheses = {
+    T01: "consistent with a shorted or open switch or diode",
+    T02: "consistent with a gate-driver supply or circuit fault",
+    T03: "consistent with a fibre/status interface or driver output fault",
+    T06: "consistent with gate-structure damage",
+    T04: "consistent with insulation damage or contamination",
+    T05: "consistent with increased conduction resistance (e.g. degraded internal connection)",
+    T07: "consistent with degraded blocking or contamination",
+    T08a: "consistent with abnormal switching or excess stray inductance",
+    T09: "consistent with slow or defective desaturation detection",
+    T10: "consistent with the driver or gate not turning off on command",
+    SAFE_STATE_NOT_VERIFIED: "bench-side fault (discharge path or meter); module result withheld"
+  };
+
+  // 02 §5 interlocks and their demo control; `short` is the name used in event text
+  var interlocks = [
+    { id: "IL1", name: "Enclosure door closed", demo_control: "toggle", short: "enclosure door" },
+    { id: "IL2", name: "E-stop healthy", demo_control: "button", short: "E-stop" },
+    { id: "IL3", name: "Ground-bond check OK", demo_control: "set by T00 self-check", short: "ground-bond check" },
+    { id: "IL4", name: "Fixture clamp engaged / DUT present", demo_control: "set in setup", short: "fixture clamp / DUT present" },
+    { id: "IL5", name: "Fibre link seated", demo_control: "set in setup", short: "fibre link" },
+    { id: "IL6", name: "Controller watchdog heartbeat", demo_control: "toggle (simulates laptop loss)", short: "controller watchdog heartbeat" },
+    { id: "IL7", name: "Bench over-current OK", demo_control: "scenario hook (optional)", short: "bench over-current" }
+  ];
+
+  // Display precision per quantity (decimals), read off the 03 §12 "Key values" column.
+  // Display only: stored values keep 4 dp.
+  var display_decimals = {
+    Q01: 2, Q03: 1, Q03b: 1, Q04: 1, Q06: 1, Q07: 1, Q10: 1, Q08: 2, Q09: 2,
+    Q11: 2, Q16: 0, Q12: 0, Q13: 0, Q14: 1, Q18: 1
+  };
+
   // 05 §8 verdict labels (exact text)
   var verdict_labels = {
     PASS: "PASS — DEMO PROFILE (illustrative, not-approved rules; not an acceptance decision)",
@@ -204,6 +298,12 @@ window.APP_DATA = (function () {
     profiles: profiles,
     scenarios: scenarios,
     built_priorities: built_priorities,
+    stages: stages,
+    physical_components: physical_components,
+    conditions_templates: conditions_templates,
+    hypotheses: hypotheses,
+    interlocks: interlocks,
+    display_decimals: display_decimals,
     speeds: [1, 4, 8, 16],
     seed_default: 20261018,
     verdict_labels: verdict_labels,

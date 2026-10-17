@@ -38,7 +38,8 @@
   .skip:focus { top:var(--s-sm); }
 
   /* SIMULATION banner: persistent on every screen (C4) */
-  #sim-banner { position:sticky; top:0; z-index:var(--z-banner); display:flex; align-items:center; justify-content:center;
+  .sticky-top { position:sticky; top:0; z-index:var(--z-banner); }
+  #sim-banner { display:flex; align-items:center; justify-content:center;
                 gap:var(--s-md); background:var(--yellow-pale); color:var(--ink); font-weight:700; font-size:15px;
                 line-height:1.35; text-align:center; padding:var(--s-sm) var(--s-lg); border-bottom:1px solid var(--ink); }
   #sim-banner::before { content:""; flex:none; width:12px; height:12px; background:var(--ink); }
@@ -153,8 +154,131 @@
   .footer-inner { max-width:1120px; margin:0 auto; padding:var(--s-xl); display:flex; flex-wrap:wrap; gap:var(--s-xs) var(--s-xl); }
   footer strong { color:var(--on-dark); }
 
+  /* FAULT_LOCKED banner (02 §7.2): error fill, white text, below the SIMULATION banner */
+  #fault-banner { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:var(--s-md) var(--s-lg);
+                  background:var(--error); color:var(--on-dark); font-weight:700; font-size:16px; padding:var(--s-sm) var(--s-lg); }
+  #fault-banner button { min-height:36px; border:1px solid var(--on-dark); color:var(--on-dark); padding:0 var(--s-lg); }
+  #fault-banner button:hover { background:var(--error-deep); }
+  #fault-banner :focus-visible { outline-color:var(--on-dark); }
+
+  .lead { margin:var(--s-lg) 0 0; }
+  .small { font-size:13px; }
+  .caption { margin:var(--s-sm) 0 0; font-size:13px; color:var(--mute); max-width:none; }
+  .section-h { margin:var(--s-xxl) 0 var(--s-xs); }
+
+  /* Status chips: text + colour, never colour alone */
+  .st { display:inline-block; font-size:11px; font-weight:700; line-height:1.3; letter-spacing:0.02em; text-transform:uppercase;
+        padding:3px var(--s-sm); border:1px solid var(--hairline-strong); border-radius:var(--r-sm); background:var(--surface-soft);
+        color:var(--ink); white-space:nowrap; }
+  .st-pass { border-color:var(--success-deep); color:var(--success-deep); background:var(--canvas); }
+  .st-fail { border-color:var(--error); color:var(--error-deep); background:var(--canvas); }
+  .st-warn { border-color:var(--warning); color:var(--ink); background:var(--canvas); box-shadow:inset 3px 0 0 var(--warning); }
+  .st-run { border-color:var(--ink); color:var(--on-dark); background:var(--ink); }
+  .st-lock { border-color:var(--error); color:var(--on-dark); background:var(--error); }
+  .verdict-pass { color:var(--success-deep); background:var(--canvas); border-color:var(--success-deep); }
+  .verdict-fail { color:var(--error-deep); background:var(--canvas); border-color:var(--error); }
+  .verdict-abort { color:var(--ink); background:var(--canvas); border-color:var(--warning); }
+  .verdict-label { margin:0 0 var(--s-xs); font-weight:700; color:var(--ink); }
+  .verdict-block { margin-top:var(--s-xl); padding-top:var(--s-xl); border-top:1px solid var(--hairline); }
+  .verdict-block p { margin:0 0 var(--s-xs); }
+
+  /* Pre-check lamps */
+  .lamps { list-style:none; margin:var(--s-xl) 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--s-md); }
+  .lamp { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; gap:2px var(--s-md); align-items:center;
+          padding:var(--s-md) var(--s-lg); border:1px solid var(--hairline); border-radius:var(--r-sm); background:var(--canvas); }
+  .lamp-dot { grid-row:span 2; width:16px; height:16px; border:1px solid var(--ink); }
+  .lamp.ok .lamp-dot { background:var(--success-deep); }
+  .lamp.open { border-color:var(--error); }
+  .lamp.open .lamp-dot { background:var(--error); }
+  .lamp-name { font-weight:700; color:var(--ink); }
+  .lamp-state { font-weight:700; font-size:14px; text-align:right; }
+  .lamp.ok .lamp-state { color:var(--success-deep); }
+  .lamp.open .lamp-state { color:var(--error-deep); }
+  .lamp-src { font-size:13px; color:var(--mute); }
+  .lamp button { grid-column:3; min-height:36px; padding:0 var(--s-md); font-size:14px; }
+
+  /* Run dashboard */
+  .run-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s-lg) var(--s-xl);
+              margin-top:var(--s-xl); padding-top:var(--s-xl); border-top:1px solid var(--hairline); }
+  .state-line { display:flex; align-items:center; gap:var(--s-sm); }
+  .state-line .st { font-size:13px; padding:6px 10px; }
+  .k { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:var(--mute); }
+  .clocks { display:flex; flex-wrap:wrap; gap:var(--s-lg) var(--s-xxl); }
+  .clock { display:flex; flex-direction:column; gap:2px; }
+  .clock .v { font-size:24px; font-weight:700; line-height:1.25; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .run-grid { display:grid; grid-template-columns:minmax(0, 5fr) minmax(0, 7fr); gap:var(--s-lg); margin-top:var(--s-lg); }
+  .run-grid-even { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .block { min-width:0; border:1px solid var(--hairline); border-radius:var(--r-sm); padding:var(--s-lg) var(--s-xl); background:var(--canvas); }
+  .block-wide { margin-top:var(--s-lg); }
+  .block h3 { font-size:12px; line-height:1.4; font-weight:700; text-transform:uppercase; letter-spacing:0.02em; color:var(--mute); margin:0 0 var(--s-md); }
+  .block h3.sub { margin-top:var(--s-xl); }
+
+  .stage-list { list-style:none; margin:0; padding:0; }
+  .stage-list li { display:grid; grid-template-columns:48px minmax(0, 1fr) auto; gap:2px var(--s-sm); align-items:center;
+                   padding:var(--s-sm) var(--s-sm); border-bottom:1px solid var(--hairline); }
+  .stage-list li:last-child { border-bottom:none; }
+  .stage-list .id { font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .stage-list .nm { font-size:14px; line-height:1.35; color:var(--body); }
+  .stage-list .cls { grid-column:2; font-size:11px; font-weight:700; letter-spacing:0.02em; color:var(--mute); }
+  .stage-list .stat { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+  .stage-list li.active { background:var(--surface-soft); box-shadow:inset 3px 0 0 var(--primary); }
+  .stage-list li.skipped .nm, .stage-list li.skipped .id { color:var(--mute); }
+  .progress { height:4px; background:var(--hairline); margin-top:var(--s-sm); }
+  .progress > span { display:block; height:100%; background:var(--ink); }
+
+  .active-name { font-size:17px; font-weight:700; line-height:1.4; color:var(--ink); margin:0; }
+  .active-meta { margin:var(--s-xs) 0 0; font-size:14px; color:var(--mute); }
+  .rcard { padding:var(--s-md) 0; border-top:1px solid var(--hairline); }
+  .rcard:first-child { border-top:none; padding-top:0; }
+  .rcard-top { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:var(--s-xs) var(--s-md); }
+  .rcard-label { font-weight:700; color:var(--ink); }
+  .rcard-value { font-size:28px; font-weight:700; line-height:1.2; color:var(--ink); font-variant-numeric:tabular-nums; margin:var(--s-xs) 0; }
+  .rcard-value .u { font-size:16px; font-weight:400; color:var(--mute); margin-left:4px; }
+  .rcard-rule { font-size:14px; color:var(--body); margin:0 0 var(--s-xs); }
+  .chips { display:flex; flex-wrap:wrap; gap:4px; margin:var(--s-xs) 0; }
+  .equation { margin-top:var(--s-lg); padding:var(--s-md) var(--s-lg); background:var(--surface-soft); border-left:3px solid var(--ink);
+              font-size:15px; font-weight:700; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; }
+  .equation .k { display:block; margin-bottom:2px; }
+  .empty { color:var(--mute); font-size:14px; margin:0; }
+
+  .kv { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:var(--s-sm) var(--s-lg); margin:0; }
+  .kv dt { font-size:14px; color:var(--mute); }
+  .kv dd { margin:0; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .meter { height:10px; margin-top:var(--s-lg); border:1px solid var(--hairline-strong); background:var(--surface-soft); }
+  .meter span { display:block; height:100%; width:0; background:var(--warning); }
+  .meter span.low { background:var(--success-deep); }
+  .controls { display:flex; flex-wrap:wrap; gap:var(--s-sm); }
+  button.danger { border-color:var(--error); color:var(--error-deep); }
+  button.danger:hover { background:var(--canvas); border-color:var(--error-deep); }
+
+  .log-wrap { max-height:340px; overflow:auto; border:1px solid var(--hairline); border-radius:var(--r-sm); overscroll-behavior:contain; }
+  .log th { position:sticky; top:0; z-index:1; }
+  .log td { font-size:13px; padding:6px 10px; vertical-align:top; }
+  .log td.num { text-align:right; white-space:nowrap; }
+  .log td.type { font-weight:700; color:var(--ink); white-space:nowrap; }
+  .log tr.ev-warn td { background:#fffaf2; }
+  .log tr.ev-warn td.type { box-shadow:inset 3px 0 0 var(--warning); }
+  .log tr.ev-abort td.type, .log tr.ev-lock td.type { box-shadow:inset 3px 0 0 var(--error); color:var(--error-deep); }
+
+  /* Result */
+  .results td { font-size:14px; vertical-align:top; }
+  .results td.q { min-width:190px; }
+  .results td.ch { min-width:220px; }
+  .results .chip { white-space:nowrap; }
+  .results tr.r-main td { border-bottom:none; padding-bottom:var(--s-xs); }
+  .results tr.r-reason td { padding-top:0; font-size:13px; line-height:1.45; color:var(--mute); }
+  .results tr.r-reason strong { color:var(--body); }
+  .results tbody tr:hover td { background:transparent; }
+  .results td .obs { display:block; font-size:12px; color:var(--mute); }
+  .results tr.notrun td { color:var(--mute); }
+  .hyp { margin:0; padding-left:var(--s-lg); }
+  .hyp li { margin:0 0 var(--s-sm); }
+
   [hidden] { display:none !important; }
 
+  @media (max-width:900px) {
+    .run-grid, .run-grid-even { grid-template-columns:minmax(0, 1fr); }
+  }
   @media (max-width:640px) {
     .topbar-inner { padding:var(--s-md) var(--s-lg); }
     .steps ol { padding:var(--s-sm) var(--s-lg); }
@@ -164,6 +288,8 @@
     .grid label { margin-top:var(--s-sm); padding-top:0; }
     input[type=text], select { max-width:none; }
     .actions button { flex:1 1 auto; }
+    .lamps { grid-template-columns:1fr; }
+    .clock .v { font-size:20px; }
     dialog#limitations { padding:var(--s-xl) var(--s-lg); }
   }
   @media (prefers-reduced-motion:reduce) {
@@ -173,7 +299,13 @@
 </head>
 <body>
 <a class="skip" href="#app">Skip to content</a>
-<div id="sim-banner" role="status"></div>
+<div class="sticky-top">
+  <div id="sim-banner" role="status"></div>
+  <div id="fault-banner" role="alert" hidden>
+    <span id="fault-text"></span>
+    <button type="button" id="btn-reset-sim">Reset simulation</button>
+  </div>
+</div>
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
@@ -255,17 +387,139 @@
     <p class="muted" id="blocked-reason"></p>
     <div class="actions">
       <button type="button" class="btn-back">Back to setup</button>
-      <button type="button" disabled title="Report export arrives in a later ticket">Export report (next ticket)</button>
+      <button type="button" id="btn-export-blocked">Download JSON</button>
     </div>
   </section>
 
-  <!-- Placeholder: preflight OK -->
-  <section id="screen-ok" class="screen" aria-labelledby="h-ok" hidden>
+  <!-- Screen 2: Pre-check -->
+  <section id="screen-precheck" class="screen" aria-labelledby="h-precheck" hidden>
     <p class="eyebrow">Screen 2 · Step 2 of 5</p>
-    <h2 id="h-ok" tabindex="-1">Configuration preflight passed</h2>
-    <div class="meta" id="ok-run"></div>
-    <p class="alert alert-warn">Pre-check: next ticket</p>
-    <div class="actions"><button type="button" class="btn-back">Back to setup</button></div>
+    <h2 id="h-precheck" tabindex="-1">Pre-check</h2>
+    <div class="meta" id="precheck-run"></div>
+    <p class="muted lead">Configuration preflight passed. Every interlock must read OK before START is enabled.</p>
+    <ul class="lamps" id="lamps" aria-label="Interlocks IL1 to IL7"></ul>
+    <p class="alert alert-warn" id="precheck-status" role="status" hidden></p>
+    <div class="actions">
+      <button type="button" class="btn-back">Back to setup</button>
+      <button type="button" class="primary" id="btn-start">START</button>
+    </div>
+  </section>
+
+  <!-- Screen 3: Run -->
+  <section id="screen-run" class="screen" aria-labelledby="h-run" hidden>
+    <p class="eyebrow">Screen 3 · Step 3 of 5</p>
+    <h2 id="h-run" tabindex="-1">Run</h2>
+    <div class="meta" id="run-meta"></div>
+
+    <div class="run-head">
+      <div class="state-line"><span class="k">Run state</span> <span id="run-state" class="st"></span></div>
+      <div class="clocks" aria-live="off">
+        <div class="clock"><span class="k">Estimated physical time</span><span class="v" id="clock-phys"></span></div>
+        <div class="clock"><span class="k">Animation time</span><span class="v" id="clock-anim"></span></div>
+        <div class="clock"><span class="k">Speed</span><span class="v" id="clock-speed"></span></div>
+      </div>
+    </div>
+    <p class="caption" id="clock-caption"></p>
+
+    <div class="run-grid">
+      <div class="block">
+        <h3>Stages</h3>
+        <ol class="stage-list" id="stage-list"></ol>
+      </div>
+      <div class="block">
+        <h3>Active stage</h3>
+        <div id="active-stage"></div>
+        <h3 class="sub">Readings <span id="readings-of" class="muted"></span></h3>
+        <div id="reading-cards"></div>
+        <div id="equation" class="equation" hidden></div>
+      </div>
+    </div>
+
+    <div class="run-grid run-grid-even">
+      <div class="block">
+        <h3>Bench state</h3>
+        <dl class="kv" id="bench"></dl>
+        <div class="meter" aria-hidden="true"><span id="bus-bar"></span></div>
+        <p class="muted small" id="bus-scale"></p>
+      </div>
+      <div class="block">
+        <h3>Demo controls</h3>
+        <p class="muted small">Each control is an abort trigger while a stage runs. During the safe-state procedure it is logged as a WARNING and ignored.</p>
+        <div class="controls">
+          <button type="button" class="danger" id="btn-abort">Abort</button>
+          <button type="button" class="danger" id="btn-door">Open door</button>
+          <button type="button" class="danger" id="btn-heartbeat">Heartbeat loss</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="block block-wide">
+      <h3>Event log</h3>
+      <div class="log-wrap" id="log-wrap" tabindex="0" aria-label="Event log">
+        <table class="log">
+          <thead><tr><th scope="col">#</th><th scope="col">Physical s</th><th scope="col">Animation s</th><th scope="col">Stage</th><th scope="col">Event</th><th scope="col">Detail</th></tr></thead>
+          <tbody id="log-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="btn-run-new" hidden>New run</button>
+      <button type="button" class="primary" id="btn-view-result" disabled>VIEW RESULT</button>
+    </div>
+  </section>
+
+  <!-- Screen 4: Result -->
+  <section id="screen-result" class="screen" aria-labelledby="h-result" hidden>
+    <p class="eyebrow">Screen 4 · Step 4 of 5</p>
+    <h2 id="h-result" tabindex="-1">Result</h2>
+    <div class="meta" id="result-meta"></div>
+
+    <div class="verdict-block">
+      <div class="verdict-row"><span>Overall</span> <span id="result-verdict" class="verdict"></span></div>
+      <p class="verdict-label" id="result-label"></p>
+      <p class="muted" id="result-precedence"></p>
+      <p class="muted" id="result-reasons"></p>
+    </div>
+
+    <h3 class="section-h">Readings</h3>
+    <div class="table-wrap">
+      <table class="results">
+        <thead><tr><th scope="col">Test</th><th scope="col">Quantity</th><th scope="col">Value</th><th scope="col">Rule</th><th scope="col">Basis · reference · approval</th><th scope="col">Margin</th><th scope="col">Verdict</th></tr></thead>
+        <tbody id="result-body"></tbody>
+      </table>
+    </div>
+
+    <div class="run-grid run-grid-even">
+      <div class="block">
+        <h3>Hypotheses (not diagnoses)</h3>
+        <ul class="hyp" id="result-hyp"></ul>
+      </div>
+      <div class="block">
+        <h3>Safe state</h3>
+        <dl class="kv" id="result-safe"></dl>
+      </div>
+    </div>
+
+    <div class="block block-wide">
+      <h3>Clocks</h3>
+      <div class="clocks">
+        <div class="clock"><span class="k">Estimated physical total</span><span class="v" id="result-phys"></span></div>
+        <div class="clock"><span class="k">Animation total</span><span class="v" id="result-anim"></span></div>
+      </div>
+      <p class="caption" id="result-caption"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Physical components</th><th scope="col">Estimate s</th></tr></thead>
+          <tbody id="result-clock-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="btn-result-new">New run</button>
+      <button type="button" class="primary" id="btn-download-json">Download JSON</button>
+    </div>
   </section>
 </main>
 

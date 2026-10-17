@@ -14,7 +14,7 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | BRIEF | Builder standing brief | – | Superseded by `CLAUDE.md` (Claude Code does everything) |
 | 01 | Offline skeleton, all data, validation + config preflight | Skeleton (+1 h) | **Done** (commit c874602; selfcheck 28/28; AC-01 on a second laptop still to do) |
 | 01b | Design pass: `DESIGN.md` (NVIDIA style) applied to banner, header, Setup, 1a, 1b | – | **Done** (selfcheck 28/28; screenshots in `design/screenshots/`) |
-| 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Written, ready to build** |
+| 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Done** (S0 matches 03 §12; AC-02 diff empty; AC-12 in headless Chrome over `file://`, offline; selfcheck 59/59; Nurkhan's own-browser check still to do) |
 | 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report | M2 17:30 | Not written |
 | 04 | Custom (AC-03), AC-14 set, AC-01 on a second laptop | M3 18:30 | Not written |
 
