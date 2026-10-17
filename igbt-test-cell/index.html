@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Offline virtual prototype of an IGBT phase-module bench test cell: operator workflow, sequencing, safety behaviour and reporting. Simulated data only.">
-<meta name="color-scheme" content="light">
-<meta name="theme-color" content="#f5f5f7">
+<meta name="color-scheme" content="light dark">
+<script src="js/theme.js"></script>
 <title>IGBT Test Cell — Virtual Prototype (SIMULATION)</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAMklEQVR42mNgGAWDCpTtJIz+EwFGLRi1YNSCUQsoseA/lcCoBaMWjFowagElFoyCAQEAswS1rDXX+5EAAAAASUVORK5CYII=">
 <style>
@@ -18,15 +18,32 @@
     --hairline:#e5e5e7; --hairline-strong:#8e8e93; --control:#8e8e93; --button-line:#d2d2d7;
     --on-dark:#ffffff; --on-dark-mute:rgba(255,255,255,0.72);
     --error:#e52020; --error-deep:#650b0b; --warning:#df6500; --warning-bright:#ef9100;
-    --success-deep:#3f8500; --yellow-pale:#feeeb2;
+    --success-deep:#3f8500; --yellow-pale:#feeeb2; --fault-bg:#d91c1c;
+    --notice-bg:#ebebed; --err-bg:#fff5f5; --err-line:#f4c7c7; --warn-bg:#fff8ef; --warn-line:#f3d2ad; --warn-text:#7a3e00;
+    --row-hover:#fbfbfb; --log-warn-bg:#fffaf2; --backdrop:rgba(0, 0, 0, 0.4);
+    --card-shadow:0 0 0 1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.04); --dialog-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
+    color-scheme:light;
     --r-sm:6px; --r-md:10px; --r-lg:16px;
     --s-xs:4px; --s-sm:8px; --s-md:12px; --s-lg:16px; --s-xl:24px; --s-xxl:32px; --s-section:64px;
     --ease:cubic-bezier(0.2, 0.7, 0.2, 1);
     --z-banner:30; --z-skip:40;
     --font:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
+  /* Dark theme (js/theme.js sets data-theme on <html> before first paint). Same tokens, near-black surfaces;
+     the primary button inverts; status colours are lifted so text keeps at least 4.5:1 on the dark surfaces. */
+  :root[data-theme="dark"] {
+    color-scheme:dark;
+    --primary:#f2f2f3; --primary-dark:#ffffff; --on-primary:#0b0b0c;
+    --ink:#f2f2f3; --body:#e4e4e7; --label:#c7c7cc; --mute:#a1a1a8; --stone:#8a8a91; --ash:#6c6c73;
+    --page:#0b0b0c; --canvas:#151517; --surface-soft:#1e1e21;
+    --hairline:#2b2b30; --hairline-strong:#6e6e76; --control:#73737b; --button-line:#3a3a40;
+    --error:#ff5f57; --error-deep:#ff9b95; --warning:#f5a524; --success-deep:#63d06b; --fault-bg:#b3261e;
+    --notice-bg:#1a1a1d; --err-bg:#2a1515; --err-line:#5c2626; --warn-bg:#2a2012; --warn-line:#5e4421; --warn-text:#f6c47e;
+    --row-hover:#1a1a1d; --log-warn-bg:#241d11; --backdrop:rgba(0, 0, 0, 0.65);
+    --card-shadow:0 0 0 1px #232327; --dialog-shadow:0 0 0 1px #2b2b30, 0 16px 48px rgba(0, 0, 0, 0.6);
+  }
   * { box-sizing:border-box; }
-  html { -webkit-text-size-adjust:100%; scroll-padding-top:96px; -webkit-tap-highlight-color:rgba(0, 0, 0, 0.08); }
+  html { -webkit-text-size-adjust:100%; scroll-padding-top:96px; -webkit-tap-highlight-color:transparent; }
   body { margin:0; font:400 16px/1.5 var(--font); color:var(--body); background:var(--page);
          min-height:100dvh; display:flex; flex-direction:column; -webkit-font-smoothing:antialiased; }
   h2[tabindex]:focus { outline:none; }
@@ -42,7 +59,7 @@
   /* SIMULATION notice: persistent on every screen (C4); one compact neutral line */
   .sticky-top { position:sticky; top:0; z-index:var(--z-banner); }
   #sim-banner { display:flex; align-items:center; justify-content:center; gap:var(--s-sm);
-                background:#ebebed; color:var(--label); font-weight:600; font-size:13px; line-height:1.4;
+                background:var(--notice-bg); color:var(--label); font-weight:600; font-size:13px; line-height:1.4;
                 text-align:center; padding:6px var(--s-lg); }
   #sim-banner::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--mute); }
 
@@ -56,9 +73,14 @@
   .badge { display:inline-block; max-width:100%; font-size:12px; font-weight:600; line-height:1.3;
            letter-spacing:0.01em; padding:5px 10px; border-radius:999px; border:1px solid transparent; }
   .badge-demo { color:var(--label); background:var(--surface-soft); border-color:var(--hairline); }
-  .badge-prod { color:#7a3e00; background:#fff4e5; border-color:#f3c27b; }
+  .badge-prod { color:var(--warn-text); background:var(--warn-bg); border-color:var(--warn-line); }
   button.quiet { min-height:36px; padding:0 var(--s-md); font-size:14px; border-color:transparent; background:transparent; }
   button.quiet:hover { background:var(--surface-soft); }
+  /* Theme switch: a labelled toggle button (aria-pressed = dark on) */
+  button.theme-toggle { display:inline-flex; align-items:center; gap:var(--s-sm); }
+  button.theme-toggle::before { content:""; flex:none; width:28px; height:16px; border-radius:999px; border:1px solid var(--control);
+                                background:radial-gradient(circle at 7px 50%, var(--mute) 5px, transparent 5.5px); }
+  button.theme-toggle[aria-pressed="true"]::before { background:radial-gradient(circle at 19px 50%, var(--ink) 5px, transparent 5.5px) var(--surface-soft); }
 
   .steps { background:var(--canvas); border-bottom:1px solid var(--hairline); }
   .steps ol { list-style:none; margin:0 auto; max-width:1120px; padding:var(--s-xs) var(--s-xl) 10px;
@@ -87,7 +109,7 @@
   /* Layout */
   main { flex:1 0 auto; width:100%; max-width:1120px; margin:0 auto; padding:var(--s-xl) var(--s-xl) var(--s-section); }
   section.screen { position:relative; background:var(--canvas); border-radius:var(--r-lg); padding:var(--s-xxl);
-                   box-shadow:0 0 0 1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.04); }
+                   box-shadow:var(--card-shadow); }
   .eyebrow { margin:0 0 var(--s-xs); font-size:13px; font-weight:500; line-height:1.4; color:var(--mute); }
   h2 { font-size:26px; letter-spacing:-0.015em; }
   h3 { font-size:18px; line-height:1.4; margin:0 0 var(--s-xs); }
@@ -155,13 +177,13 @@
   td { font-variant-numeric:tabular-nums; overflow-wrap:break-word; }
   td code { white-space:nowrap; }
   td input[type=text], td select { min-height:40px; min-width:104px; max-width:160px; }
-  tbody tr:hover td { background:#fbfbfb; }
+  tbody tr:hover td { background:var(--row-hover); }
 
   /* Status */
   /* Operational alerts keep their colour: red for invalid input, amber for a block or caution */
-  .alert { margin:var(--s-xl) 0 var(--s-lg); padding:14px var(--s-lg) 14px 18px; background:#fff5f5; border:1px solid #f4c7c7;
+  .alert { margin:var(--s-xl) 0 var(--s-lg); padding:14px var(--s-lg) 14px 18px; background:var(--err-bg); border:1px solid var(--err-line);
            border-left:4px solid var(--error); color:var(--error-deep); font-weight:600; line-height:1.5; border-radius:12px; }
-  .alert-warn { background:#fff8ef; border-color:#f3d2ad; border-left-color:var(--warning); color:var(--ink); }
+  .alert-warn { background:var(--warn-bg); border-color:var(--warn-line); border-left-color:var(--warning); color:var(--ink); }
   .verdict { display:inline-block; font-size:18px; font-weight:700; line-height:1.25; padding:var(--s-sm) 14px;
              border:2px solid; border-radius:var(--r-md); }
   .verdict-ne { color:var(--body); background:var(--surface-soft); border-color:var(--hairline-strong); }
@@ -173,9 +195,9 @@
 
   /* Limitations dialog */
   dialog#limitations { width:min(720px, calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:var(--s-xxl);
-                       border:none; border-radius:var(--r-lg); box-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
-                       color:var(--body); overflow:auto; overscroll-behavior:contain; }
-  dialog#limitations::backdrop { background:rgba(0, 0, 0, 0.4); }
+                       border:none; border-radius:var(--r-lg); box-shadow:var(--dialog-shadow);
+                       background:var(--canvas); color:var(--body); overflow:auto; overscroll-behavior:contain; }
+  dialog#limitations::backdrop { background:var(--backdrop); }
   dialog#limitations h3 { margin-top:var(--s-xl); }
   #chip-legend { list-style:none; padding:0; margin:var(--s-md) 0 var(--s-xl); display:grid; gap:var(--s-sm); }
   #chip-legend li { font-size:15px; }
@@ -187,10 +209,10 @@
 
   /* FAULT_LOCKED banner (02 §7.2): error fill, white text, below the SIMULATION banner */
   #fault-banner { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:var(--s-md) var(--s-lg);
-                  background:var(--error); color:var(--on-dark); font-weight:700; font-size:16px; padding:var(--s-sm) var(--s-lg); }
-  #fault-banner button { min-height:36px; border:1px solid var(--on-dark); background:transparent; color:var(--on-dark); padding:0 var(--s-lg); }
-  #fault-banner button:hover { background:var(--error-deep); }
-  #fault-banner :focus-visible { outline-color:var(--on-dark); }
+                  background:var(--fault-bg); color:#ffffff; font-weight:700; font-size:16px; padding:var(--s-sm) var(--s-lg); }
+  #fault-banner button { min-height:36px; border:1px solid #ffffff; background:transparent; color:#ffffff; padding:0 var(--s-lg); }
+  #fault-banner button:hover { background:rgba(0, 0, 0, 0.2); }
+  #fault-banner :focus-visible { outline-color:#ffffff; }
 
   .lead { margin:var(--s-lg) 0 0; }
   .small { font-size:13px; }
@@ -204,8 +226,8 @@
   .st-pass { border-color:var(--success-deep); color:var(--success-deep); background:var(--canvas); }
   .st-fail { border-color:var(--error); color:var(--error-deep); background:var(--canvas); }
   .st-warn { border-color:var(--warning); color:var(--ink); background:var(--canvas); box-shadow:inset 3px 0 0 var(--warning); }
-  .st-run { border-color:var(--ink); color:var(--on-dark); background:var(--ink); }
-  .st-lock { border-color:var(--error); color:var(--on-dark); background:var(--error); }
+  .st-run { border-color:var(--primary); color:var(--on-primary); background:var(--primary); }
+  .st-lock { border-color:var(--fault-bg); color:#ffffff; background:var(--fault-bg); }
   .verdict-pass { color:var(--success-deep); background:var(--canvas); border-color:var(--success-deep); }
   .verdict-fail { color:var(--error-deep); background:var(--canvas); border-color:var(--error); }
   .verdict-abort { color:var(--ink); background:var(--canvas); border-color:var(--warning); }
@@ -219,7 +241,7 @@
           padding:var(--s-md) var(--s-lg); border:1px solid var(--hairline); border-radius:12px; background:var(--canvas); }
   .lamp-dot { grid-row:span 2; width:12px; height:12px; border-radius:50%; }
   .lamp.ok .lamp-dot { background:var(--success-deep); }
-  .lamp.open { border-color:var(--error); background:#fff5f5; }
+  .lamp.open { border-color:var(--error); background:var(--err-bg); }
   .lamp.open .lamp-dot { background:var(--error); }
   .lamp-name { font-size:15px; font-weight:600; color:var(--ink); }
   .lamp-state { font-weight:600; font-size:13px; text-align:right; }
@@ -227,6 +249,13 @@
   .lamp.open .lamp-state { color:var(--error-deep); }
   .lamp-src { font-size:13px; color:var(--mute); }
   .lamp button { grid-column:3; min-height:36px; padding:0 var(--s-md); font-size:14px; }
+  .ready-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--s-md) var(--s-xl);
+               margin:var(--s-xl) 0 var(--s-xxl); }
+  .ready-bar .alert { flex:1 1 360px; margin:0; }
+  .ready { flex:1 1 360px; margin:0; font-size:17px; font-weight:600; color:var(--success-deep); }
+  .ready-actions { margin-top:0; }
+  .lamps-title .muted { font-size:13px; font-weight:400; }
+  .lamps-title + .lamps { margin-top:0; }
 
   /* Run (Screen 3): active test, bench state and controls side by side; compact stages; log on demand */
   .run-top { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s-md) var(--s-xl); }
@@ -237,7 +266,11 @@
   .clocks { display:flex; flex-wrap:wrap; gap:var(--s-md) var(--s-xxl); }
   .clock { display:flex; flex-direction:column; gap:0; }
   .clock .v { font-size:22px; font-weight:600; line-height:1.25; color:var(--ink); font-variant-numeric:tabular-nums; }
-  .run-layout { display:grid; grid-template-columns:minmax(0, 300px) minmax(0, 1fr) minmax(0, 300px); gap:var(--s-lg); margin-top:var(--s-lg); align-items:start; }
+  .run-layout { display:grid; grid-template-columns:minmax(0, 260px) minmax(0, 1fr) minmax(0, 300px); gap:var(--s-lg) 20px; margin-top:var(--s-lg); align-items:start; }
+  .stages-col { min-width:0; padding-top:var(--s-lg); }
+  .stages-col h3 { font-size:13px; line-height:1.4; font-weight:600; color:var(--mute); margin:0 0 var(--s-sm); }
+  .active-progress { margin:var(--s-sm) 0 0; }
+  .active-progress .progress { margin-top:4px; height:6px; border-radius:3px; }
   .side-col { display:grid; gap:var(--s-lg); min-width:0; }
   .run-grid-even { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--s-lg); margin-top:var(--s-lg); }
   .block { min-width:0; border:1px solid var(--hairline); border-radius:12px; padding:var(--s-lg) 20px; background:var(--canvas); }
@@ -295,7 +328,7 @@
   .controls button { flex:1 1 auto; min-height:40px; padding:0 14px; }
   #btn-abort { flex-basis:100%; }
   button.danger { border-color:var(--error); color:var(--error-deep); }
-  button.danger:hover { background:#fff5f5; border-color:var(--error-deep); }
+  button.danger:hover { background:var(--err-bg); border-color:var(--error-deep); }
 
   details.log-details { margin-top:var(--s-lg); border:1px solid var(--hairline); border-radius:12px; background:var(--canvas); }
   details.log-details > summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-xs) var(--s-md); cursor:pointer;
@@ -310,7 +343,7 @@
   .log td { font-size:13px; padding:6px 10px; vertical-align:top; }
   .log td.num { text-align:right; white-space:nowrap; }
   .log td.type { font-weight:600; color:var(--ink); white-space:nowrap; }
-  .log tr.ev-warn td { background:#fffaf2; }
+  .log tr.ev-warn td { background:var(--log-warn-bg); }
   .log tr.ev-warn td.type { box-shadow:inset 3px 0 0 var(--warning); }
   .log tr.ev-abort td.type, .log tr.ev-lock td.type { box-shadow:inset 3px 0 0 var(--error); color:var(--error-deep); }
 
@@ -329,7 +362,16 @@
   .enc-locked { color:var(--error-deep); }
   .enc-detail { margin-top:var(--s-xs) !important; font-size:13px; color:var(--mute); line-height:1.5; }
   .result-actions { margin-top:var(--s-lg); }
-  .evidence-h { margin:48px 0 var(--s-xs); font-size:18px; }
+  .evidence-h { margin:40px 0 var(--s-sm); font-size:15px; color:var(--mute); }
+  .evidence { border-top:1px solid var(--hairline); }
+  details.section-details { border-bottom:1px solid var(--hairline); }
+  details.section-details > summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s-xs) var(--s-md); cursor:pointer;
+                                      list-style:none; padding:14px 0; font-size:15px; font-weight:600; color:var(--ink); }
+  details.section-details > summary::-webkit-details-marker { display:none; }
+  details.section-details > summary::before { content:"\203A"; display:inline-block; width:12px; color:var(--mute); transition:transform 150ms var(--ease); }
+  details.section-details[open] > summary::before { transform:rotate(90deg); }
+  details.section-details > summary .muted { font-size:13px; font-weight:400; }
+  details.section-details > :not(summary) { margin-top:0; margin-bottom:var(--s-lg); }
   .results td { font-size:14px; vertical-align:top; }
   .results td.q { min-width:190px; }
   .results td.ch { min-width:220px; }
@@ -349,13 +391,14 @@
 
   [hidden] { display:none !important; }
 
+  /* Narrower: the current test and its controls come first; stage history moves below */
   @media (max-width:1100px) {
-    .run-layout { grid-template-columns:minmax(0, 260px) minmax(0, 1fr); }
-    .side-col { grid-column:1 / -1; grid-template-columns:repeat(2, minmax(0, 1fr)); }
-    .side-col .run-actions { grid-column:1 / -1; }
+    .run-layout { grid-template-columns:minmax(0, 1fr) minmax(0, 300px); }
+    .stages-col { grid-column:1 / -1; order:3; padding-top:0; }
   }
   @media (max-width:900px) {
     .run-layout, .run-grid-even, .side-col, .outcome { grid-template-columns:minmax(0, 1fr); }
+    .ready-bar { margin-bottom:var(--s-xl); }
     .outcome-side { border-left:none; padding-left:0; border-top:1px solid var(--hairline); padding-top:var(--s-lg); }
     .fields-4 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   }
@@ -391,6 +434,7 @@
       <h1>Virtual IGBT test cell</h1>
     </div>
     <span id="profile-badge" class="badge"></span>
+    <button type="button" id="theme-toggle" class="quiet theme-toggle" aria-pressed="false">Dark mode</button>
     <button type="button" id="open-limitations" class="quiet" aria-haspopup="dialog">Limitations</button>
   </div>
 </header>
@@ -472,7 +516,7 @@
 
     <div id="custom-panel" class="panel" hidden>
       <h3>Custom module parameters</h3>
-      <p class="muted">Fictional module; values are illustrative. Values are checked by the configuration preflight.</p>
+      <p class="muted">Fictional module; illustrative values, checked before the run.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col">Unit</th><th scope="col">Note</th></tr></thead>
@@ -484,7 +528,6 @@
 
     <div class="setup-actions">
       <button type="button" class="primary" id="btn-continue">Continue to pre-check</button>
-      <p class="muted">Checks the configuration first. Nothing runs until you press START on the pre-check.</p>
     </div>
   </section>
 
@@ -527,13 +570,17 @@
     <p class="eyebrow">Step 2 of 5 · Pre-check</p>
     <h2 id="h-precheck" tabindex="-1">Pre-check</h2>
     <div class="meta" id="precheck-run"></div>
-    <p class="muted lead">Configuration preflight passed. Every interlock must read OK before START is enabled.</p>
-    <ul class="lamps" id="lamps" aria-label="Interlocks IL1 to IL7"></ul>
-    <p class="alert alert-warn" id="precheck-status" role="status" hidden></p>
-    <div class="actions">
-      <button type="button" class="btn-back">Back to setup</button>
-      <button type="button" class="primary" id="btn-start">START</button>
+    <!-- Readiness first: one line saying ready, or the amber blocking message; START beside it -->
+    <div class="ready-bar">
+      <p class="ready" id="precheck-ready" role="status" hidden></p>
+      <p class="alert alert-warn" id="precheck-status" role="status" hidden></p>
+      <div class="actions ready-actions">
+        <button type="button" class="btn-back">Back to setup</button>
+        <button type="button" class="primary" id="btn-start">START</button>
+      </div>
     </div>
+    <h3 class="group-title lamps-title">Interlocks <span class="muted">· all must read OK to start</span></h3>
+    <ul class="lamps" id="lamps" aria-label="Interlocks IL1 to IL7"></ul>
   </section>
 
   <!-- Screen 3: Run -->
@@ -556,12 +603,12 @@
     <p class="caption" id="clock-caption"></p>
 
     <div class="run-layout">
-      <div class="block">
-        <h3>Stages</h3>
+      <div class="stages-col">
+        <h3>Stage history</h3>
         <ol class="stage-list" id="stage-list"></ol>
       </div>
-      <div class="block">
-        <h3>Active test</h3>
+      <div class="block current-col">
+        <h3>Current test</h3>
         <div id="active-stage" class="active-zone"></div>
         <div class="readings-zone">
           <h3 class="sub"><span id="readings-kind">Latest completed readings</span> <span id="readings-of" class="muted"></span></h3>
@@ -577,7 +624,7 @@
             <button type="button" class="danger" id="btn-door">Open door</button>
             <button type="button" class="danger" id="btn-heartbeat">Heartbeat loss</button>
           </div>
-          <p class="muted small">Each control is an abort trigger while a stage runs. During the safe-state procedure it is logged as a WARNING and ignored.</p>
+          <p class="muted small">Each aborts a running stage. During the safe-state procedure it is only logged (WARNING).</p>
         </div>
         <div class="block">
           <h3>Bench state</h3>
@@ -624,49 +671,50 @@
     </div>
 
     <div class="actions result-actions">
-      <button type="button" id="btn-result-new">New run</button>
-      <button type="button" id="btn-download-json">Download JSON</button>
       <button type="button" class="primary" id="btn-view-report">VIEW REPORT</button>
+      <button type="button" id="btn-download-json">Download JSON</button>
+      <button type="button" id="btn-result-new">New run</button>
     </div>
 
+    <!-- Evidence: each part on demand; the summary lines carry the key figures -->
     <h3 class="evidence-h">Evidence</h3>
-    <details class="inline-details">
-      <summary>Run identifiers and inputs</summary>
-      <p class="muted small" id="result-reasons"></p>
-      <div class="meta" id="result-inputs"></div>
-    </details>
-    <h3 class="section-h">Readings</h3>
-    <div class="table-wrap">
-      <table class="results">
-        <thead><tr><th scope="col">Test</th><th scope="col">Quantity</th><th scope="col">Value</th><th scope="col">Rule</th><th scope="col">Basis · reference · approval</th><th scope="col">Margin</th><th scope="col">Verdict</th></tr></thead>
-        <tbody id="result-body"></tbody>
-      </table>
-    </div>
-
-    <div class="run-grid-even">
-      <div class="block">
-        <h3>Hypotheses (not diagnoses)</h3>
+    <div class="evidence">
+      <details class="section-details" id="ev-readings">
+        <summary>Readings <span class="muted" id="result-readings-count"></span></summary>
+        <div class="table-wrap">
+          <table class="results">
+            <thead><tr><th scope="col">Test</th><th scope="col">Quantity</th><th scope="col">Value</th><th scope="col">Rule</th><th scope="col">Basis · reference · approval</th><th scope="col">Margin</th><th scope="col">Verdict</th></tr></thead>
+            <tbody id="result-body"></tbody>
+          </table>
+        </div>
+      </details>
+      <details class="section-details" id="ev-hyp">
+        <summary>Hypotheses (not diagnoses) <span class="muted" id="result-hyp-count"></span></summary>
         <ul class="hyp" id="result-hyp"></ul>
-      </div>
-      <div class="block">
-        <h3>Safe state</h3>
+      </details>
+      <details class="section-details" id="ev-safe">
+        <summary>Safe-state record</summary>
         <dl class="kv" id="result-safe"></dl>
-      </div>
-    </div>
-
-    <div class="block block-wide">
-      <h3>Clocks</h3>
-      <div class="clocks">
-        <div class="clock"><span class="k">Estimated physical total</span><span class="v" id="result-phys"></span></div>
-        <div class="clock"><span class="k">Animation total</span><span class="v" id="result-anim"></span></div>
-      </div>
-      <p class="caption" id="result-caption"></p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Physical components</th><th scope="col">Estimate s</th></tr></thead>
-          <tbody id="result-clock-body"></tbody>
-        </table>
-      </div>
+      </details>
+      <details class="section-details" id="ev-timing">
+        <summary>Timing <span class="muted" id="result-timing-sum"></span></summary>
+        <div class="clocks">
+          <div class="clock"><span class="k">Estimated physical total</span><span class="v" id="result-phys"></span></div>
+          <div class="clock"><span class="k">Animation total</span><span class="v" id="result-anim"></span></div>
+        </div>
+        <p class="caption" id="result-caption"></p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Stage</th><th scope="col">Status</th><th scope="col">Physical components</th><th scope="col">Estimate s</th></tr></thead>
+            <tbody id="result-clock-body"></tbody>
+          </table>
+        </div>
+      </details>
+      <details class="section-details" id="ev-ids">
+        <summary>Identifiers and inputs</summary>
+        <p class="muted small" id="result-reasons"></p>
+        <div class="meta" id="result-inputs"></div>
+      </details>
     </div>
   </section>
 
@@ -675,7 +723,7 @@
     <p class="eyebrow">Step 5 of 5 · Report</p>
     <h2 id="h-report" tabindex="-1">Report</h2>
     <div class="meta" id="report-meta"></div>
-    <p class="muted lead">Preview of the HTML report (05 §10). Print / Save PDF prints this report only; choose “Save as PDF” in the print dialog. The banner and footer repeat on every printed page.</p>
+    <p class="muted lead">Print / Save PDF prints this report only; choose “Save as PDF” in the print dialog.</p>
     <div class="preview-wrap">
       <iframe id="report-preview" class="preview" title="HTML report preview"></iframe>
     </div>

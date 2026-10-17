@@ -353,6 +353,10 @@ window.IGBT.ui = (function () {
     var open = D.interlocks.filter(function (il) { return !run.interlocks[il.id]; }).map(function (il) { return il.id; });
     $("precheck-status").hidden = allOk;
     $("precheck-status").textContent = allOk ? "" : "START disabled: " + open.join(", ") + " not OK.";
+    if ($("precheck-ready")) {
+      $("precheck-ready").hidden = !allOk;
+      $("precheck-ready").textContent = allOk ? "Configuration valid · all " + D.interlocks.length + " interlocks OK · ready to start" : "";
+    }
   }
   function onStart() {
     var res = SEQ.start(state.run);
@@ -452,6 +456,13 @@ window.IGBT.ui = (function () {
     box.appendChild(el("p", { class: "active-name", text: st.test_id + " · " + st.name }));
     box.appendChild(el("p", { class: "active-meta", text: st["class"] + " · " + def.excitation + (prog !== null ? " · " + Math.round(prog * 100) + "%" : "") +
       (st.status_note ? " · " + st.status_note : "") }));
+    // Display only: where this test sits in the sequence, with the stage's own progress
+    var idx = run.stages.indexOf(st) + 1;
+    var pc = prog === null ? 0 : Math.round(prog * 100);
+    var bar = el("div", { class: "progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pc),
+      "aria-label": st.test_id + " progress" }, [el("span")]);
+    bar.firstChild.style.width = pc + "%";
+    box.appendChild(el("div", { class: "active-progress" }, [el("span", { class: "k", text: "Test " + idx + " of " + run.stages.length }), bar]));
   }
 
   // Readings card: the active stage once it has readings (T10 after SS3), else the last DONE stage with readings
@@ -479,8 +490,7 @@ window.IGBT.ui = (function () {
         el("div", { class: "rcard-top" }, [el("span", { class: "rcard-label", text: r.quantity_id + " · " + r.label }), verdictChip(r.verdict)]),
         el("p", { class: "rcard-value" }, [valueText(r), u ? el("span", { class: "u", text: u }) : null]),
         el("p", { class: "rcard-rule", text: "Rule: " + ruleText(r) + " · margin " + marginText(r) + (r.observation !== "OBSERVED" ? " · " + r.observation : "") }),
-        chipsFor(r),
-        el("p", { class: "muted small", text: "Conditions: " + (r.conditions || "—") })
+        chipsFor(r)
       ]));
     });
     var eqs = st.readings.filter(function (r) { return r.model_equation; }).map(function (r) { return r.model_equation; });
@@ -586,6 +596,13 @@ window.IGBT.ui = (function () {
     det.hypotheses.forEach(function (h) {
       hyp.appendChild(el("li", { text: (h.source === "SAFE_STATE" ? "Safe state" : h.source + " (" + h.quantity_ids.join(", ") + ")") + ": " + h.text }));
     });
+    // Evidence summary lines (display only). Hypotheses open by themselves when there are any.
+    var counts = {};
+    det.stages.forEach(function (st) { st.readings.forEach(function (r) { counts[r.verdict] = (counts[r.verdict] || 0) + 1; }); });
+    if ($("result-readings-count")) $("result-readings-count").textContent = Object.keys(counts).map(function (v) { return counts[v] + " " + v; }).join(" · ");
+    if ($("result-hyp-count")) $("result-hyp-count").textContent = det.hypotheses.length ? String(det.hypotheses.length) : "none";
+    if ($("ev-hyp")) $("ev-hyp").open = det.hypotheses.length > 0;
+    if ($("result-timing-sum")) $("result-timing-sum").textContent = sec(det.physical_total_s) + " estimated";
 
     var ss = det.safe_state, enc = $("result-enclosure");
     // Enclosure summary (display only): the door and final state from the safe-state record; details stay in the Safe state block
