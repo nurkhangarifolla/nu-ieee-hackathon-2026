@@ -12,13 +12,17 @@
   /* Tokens: warm off-white page, white surfaces, graphite text, subtle grey borders and one restrained green
      accent (primary action, progress, current step). Status colours only for operational states. */
   :root {
-    --primary:#2f6b4f; --primary-dark:#24563f; --on-primary:#ffffff; --accent-soft:#e7f0ea;
+    /* Lime accent (from #76B900): button fill with graphite text; a darker edge keeps 3:1 against the page;
+       --accent-text is the small-text companion on light surfaces (5.1:1 or more). Status green (PASS, unlocked) is a
+       cooler teal so it never reads as the accent. */
+    --primary:#76b900; --primary-dark:#6aa600; --on-primary:#1f2412; --primary-edge:#5f9400; --progress-edge:#558500;
+    --accent-soft:#eef5dc; --accent-text:#4a7300;
     --ink:#23262b; --body:#2b2e33; --label:#3d4046; --mute:#676a70; --stone:#86888c; --ash:#b2b2b0;
     --page:#f6f4ef; --canvas:#ffffff; --surface-soft:#f4f2ed; --surface-dark:#23262b; --surface-elevated:#2c2e33;
     --hairline:#e6e3dc; --hairline-strong:#8c8a84; --control:#8c8a84; --button-line:#d9d6ce;
     --on-dark:#ffffff; --on-dark-mute:rgba(255,255,255,0.72);
     --error:#e52020; --error-deep:#650b0b; --warning:#df6500; --warning-bright:#ef9100;
-    --success-deep:#3f8500; --yellow-pale:#feeeb2; --fault-bg:#d91c1c;
+    --success-deep:#1d7a55; --yellow-pale:#feeeb2; --fault-bg:#d91c1c;
     --notice-bg:#eeebe4; --err-bg:#fff5f5; --err-line:#f4c7c7; --warn-bg:#fff8ef; --warn-line:#f3d2ad; --warn-text:#7a3e00;
     --row-hover:#faf9f6; --log-warn-bg:#fffaf2; --backdrop:rgba(0, 0, 0, 0.4);
     --card-shadow:0 0 0 1px rgba(60, 50, 30, 0.06), 0 1px 3px rgba(60, 50, 30, 0.05); --dialog-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
@@ -33,11 +37,12 @@
      accent with dark text, status colours lifted so text keeps at least 4.5:1. */
   :root[data-theme="dark"] {
     color-scheme:dark;
-    --primary:#74c393; --primary-dark:#8fd2a8; --on-primary:#10201a; --accent-soft:#22332a;
+    --primary:#7fc41a; --primary-dark:#8fd12a; --on-primary:#141a05; --primary-edge:#7fc41a; --progress-edge:#7fc41a;
+    --accent-soft:#2a3418; --accent-text:#9ad43f;
     --ink:#eceae5; --body:#e2e0db; --label:#cac8c3; --mute:#a5a39e; --stone:#8c8a86; --ash:#6b6a67;
     --page:#1a1b1d; --canvas:#232427; --surface-soft:#2b2c30;
     --hairline:#36373c; --hairline-strong:#7d7d82; --control:#7d7d82; --button-line:#45464b;
-    --error:#ff5f57; --error-deep:#ff9b95; --warning:#f5a524; --success-deep:#63d06b; --fault-bg:#b3261e;
+    --error:#ff5f57; --error-deep:#ff9b95; --warning:#f5a524; --success-deep:#4cc495; --fault-bg:#b3261e;
     --notice-bg:#202124; --err-bg:#2f1d1d; --err-line:#5c2626; --warn-bg:#2a2012; --warn-line:#5e4421; --warn-text:#f6c47e;
     --row-hover:#26272a; --log-warn-bg:#2a2416; --backdrop:rgba(0, 0, 0, 0.65);
     --card-shadow:0 0 0 1px #2e2f33; --dialog-shadow:0 0 0 1px #2b2b30, 0 16px 48px rgba(0, 0, 0, 0.6);
@@ -74,7 +79,7 @@
   button.theme-toggle { display:inline-flex; align-items:center; gap:var(--s-sm); }
   button.theme-toggle::before { content:""; flex:none; width:28px; height:16px; border-radius:999px; border:1px solid var(--control);
                                 background:radial-gradient(circle at 7px 50%, var(--mute) 5px, transparent 5.5px); }
-  button.theme-toggle[aria-pressed="true"]::before { background:radial-gradient(circle at 19px 50%, var(--ink) 5px, transparent 5.5px) var(--surface-soft); }
+  button.theme-toggle[aria-pressed="true"]::before { border-color:var(--primary-edge); background:radial-gradient(circle at 19px 50%, var(--primary) 5px, transparent 5.5px) var(--surface-soft); }
 
   .steps { background:var(--canvas); border-bottom:1px solid var(--hairline); }
   .steps ol { list-style:none; margin:0 auto; max-width:1120px; padding:var(--s-xs) var(--s-xl) 10px;
@@ -85,7 +90,8 @@
   .steps li .n { font-variant-numeric:tabular-nums; }
   .steps li.done { color:var(--label); }
   .steps li.done .n::after { content:" ✓"; }
-  .steps li[aria-current="step"] { background:var(--accent-soft); color:var(--ink); font-weight:600; }
+  .steps li[aria-current="step"] { background:var(--accent-soft); color:var(--ink); font-weight:600; box-shadow:inset 0 -2px 0 var(--primary-edge); }
+  .steps li[aria-current="step"] .n { color:var(--accent-text); }
 
   /* Buttons: dark neutral primary, quiet secondary */
   button { font:600 15px/1.25 var(--font); min-height:44px; padding:0 20px; border-radius:var(--r-md);
@@ -94,8 +100,8 @@
            touch-action:manipulation; }
   button:hover { background:var(--surface-soft); }
   button:active { transform:translateY(1px); }
-  button.primary { background:var(--primary); border-color:var(--primary); color:var(--on-primary); }
-  button.primary:hover { background:var(--primary-dark); border-color:var(--primary-dark); }
+  button.primary { background:var(--primary); border-color:var(--primary-edge); color:var(--on-primary); }
+  button.primary:hover { background:var(--primary-dark); border-color:var(--primary-edge); }
   button:disabled, button:disabled:hover { background:var(--surface-soft); border-color:var(--hairline); color:var(--ash);
                                            cursor:not-allowed; transform:none; }
   :focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
@@ -308,12 +314,12 @@
   .stage-list .stat { display:flex; align-items:center; gap:4px; }
   .stage-list .stat .st { font-size:10px; padding:2px 6px; }
   .stage-list .stat .st:first-child:not(:last-child) { display:none; }
-  .stage-list li.active { background:var(--surface-soft); box-shadow:inset 3px 0 0 var(--ink); }
+  .stage-list li.active { background:var(--surface-soft); box-shadow:inset 3px 0 0 var(--primary-edge); }
   .stage-list li.active .nm { white-space:normal; font-weight:600; }
   .stage-list li.active .cls { display:block; }
   .stage-list li.skipped .nm, .stage-list li.skipped .id { color:var(--mute); }
   .progress { height:4px; background:var(--hairline); margin-top:6px; border-radius:2px; overflow:hidden; }
-  .progress > span { display:block; height:100%; background:var(--primary); }
+  .progress > span { display:block; height:100%; background:var(--primary); box-shadow:inset 0 0 0 1px var(--progress-edge); }
 
   .active-zone { padding-bottom:var(--s-md); }
   .readings-zone { margin:var(--s-sm) -8px 0; padding:var(--s-md) var(--s-md) var(--s-xs); background:var(--surface-soft); border-radius:var(--r-md); }
