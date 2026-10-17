@@ -37,7 +37,7 @@ Read the specs in this order: 04 (plan and priorities) → 02 (design) → 05 (d
 
 ## How to work
 1. **One slice at a time.** Each slice is a ticket in `Tickets.md` (goal, steps, Done when). If the next ticket isn't written yet, write it first. Order: 01 skeleton/validation → 02 engine + S0 (M1) → 03 S1–S8 + HTML report (M2) → 04 Custom + AC-14 + AC-01 (M3).
-2. Build in `igbt-test-cell/`, styled per `DESIGN.md`. Commit each slice as `TICKET NN: summary` (one repo at the vault root; raw `.pptx` decks and `graphify-out/` are ignored). Don't push.
+2. Build in `igbt-test-cell/`, styled per `DESIGN.md`. Commit each slice as `TICKET NN: summary` (one repo at the vault root; raw `.pptx` decks and `graphify-out/` are ignored). Push `main` to the private GitHub repo `nurkhangarifolla/nu-ieee-hackathon-2026` after each slice so the team sees the latest. Never make it public.
 3. **Check your own work before calling it done.** Test every Done-when line. The engine has no DOM, so run it with `node` (load `data.js` and `engine.js` with a `window` shim). Compare against the 03 §12 table and diff two runs for determinism (AC-02). Ask Nurkhan for browser screenshots and the second-laptop offline test (AC-01).
 4. Put your own small decisions in `igbt-test-cell/NOTES-FOR-NURKHAN.md` under "Needs your decision" and "Decisions I made". Team-level decisions go in `Decisions.md`.
 5. Ask Nurkhan only when you need a fact or choice that only he has. Otherwise keep going.
