@@ -147,23 +147,23 @@
   .panel p { margin:0 0 var(--s-lg); }
 
   /* Tables */
-  .table-wrap { width:100%; overflow-x:auto; margin:var(--s-md) 0; border:1px solid var(--hairline); border-radius:var(--r-sm); }
+  .table-wrap { width:100%; overflow-x:auto; margin:var(--s-md) 0; border:1px solid var(--hairline); border-radius:12px; }
   table { border-collapse:collapse; width:100%; }
   th, td { text-align:left; padding:10px var(--s-md); border-bottom:1px solid var(--hairline); vertical-align:middle; }
   tbody tr:last-child td { border-bottom:none; }
-  th { font-size:12px; font-weight:700; line-height:1.25; text-transform:uppercase; letter-spacing:0.02em; color:var(--mute);
-       background:var(--surface-soft); white-space:nowrap; }
+  th { font-size:12px; font-weight:600; line-height:1.25; color:var(--mute); background:var(--surface-soft); white-space:nowrap; }
   td { font-variant-numeric:tabular-nums; overflow-wrap:break-word; }
   td code { white-space:nowrap; }
   td input[type=text], td select { min-height:40px; min-width:104px; max-width:160px; }
   tbody tr:hover td { background:#fbfbfb; }
 
   /* Status */
-  .alert { margin:var(--s-xl) 0 var(--s-lg); padding:var(--s-lg) var(--s-xl); background:var(--surface-soft);
-           border-left:4px solid var(--error); color:var(--error-deep); font-weight:700; border-radius:var(--r-sm); }
-  .alert-warn { border-left-color:var(--warning); color:var(--ink); }
+  /* Operational alerts keep their colour: red for invalid input, amber for a block or caution */
+  .alert { margin:var(--s-xl) 0 var(--s-lg); padding:14px var(--s-lg) 14px 18px; background:#fff5f5; border:1px solid #f4c7c7;
+           border-left:4px solid var(--error); color:var(--error-deep); font-weight:600; line-height:1.5; border-radius:12px; }
+  .alert-warn { background:#fff8ef; border-color:#f3d2ad; border-left-color:var(--warning); color:var(--ink); }
   .verdict { display:inline-block; font-size:18px; font-weight:700; line-height:1.25; padding:var(--s-sm) 14px;
-             border:2px solid; border-radius:var(--r-sm); }
+             border:2px solid; border-radius:var(--r-md); }
   .verdict-ne { color:var(--body); background:var(--surface-soft); border-color:var(--hairline-strong); }
   .verdict-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-md); margin:0 0 var(--s-md); }
   .chip { display:inline-block; font-size:11px; font-weight:700; line-height:1.3; letter-spacing:0.02em; padding:3px var(--s-sm);
@@ -173,8 +173,9 @@
 
   /* Limitations dialog */
   dialog#limitations { width:min(720px, calc(100vw - 32px)); max-height:calc(100dvh - 32px); padding:var(--s-xxl);
-                       border:1px solid var(--hairline); border-radius:var(--r-sm); color:var(--body); overflow:auto; overscroll-behavior:contain; }
-  dialog#limitations::backdrop { background:rgba(0, 0, 0, 0.6); }
+                       border:none; border-radius:var(--r-lg); box-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
+                       color:var(--body); overflow:auto; overscroll-behavior:contain; }
+  dialog#limitations::backdrop { background:rgba(0, 0, 0, 0.4); }
   dialog#limitations h3 { margin-top:var(--s-xl); }
   #chip-legend { list-style:none; padding:0; margin:var(--s-md) 0 var(--s-xl); display:grid; gap:var(--s-sm); }
   #chip-legend li { font-size:15px; }
@@ -213,15 +214,15 @@
   .verdict-block p { margin:0 0 var(--s-xs); }
 
   /* Pre-check lamps */
-  .lamps { list-style:none; margin:var(--s-xl) 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--s-md); }
+  .lamps { list-style:none; margin:var(--s-xl) 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--s-sm); }
   .lamp { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; gap:2px var(--s-md); align-items:center;
-          padding:var(--s-md) var(--s-lg); border:1px solid var(--hairline); border-radius:var(--r-sm); background:var(--canvas); }
-  .lamp-dot { grid-row:span 2; width:16px; height:16px; border:1px solid var(--ink); }
+          padding:var(--s-md) var(--s-lg); border:1px solid var(--hairline); border-radius:12px; background:var(--canvas); }
+  .lamp-dot { grid-row:span 2; width:12px; height:12px; border-radius:50%; }
   .lamp.ok .lamp-dot { background:var(--success-deep); }
-  .lamp.open { border-color:var(--error); }
+  .lamp.open { border-color:var(--error); background:#fff5f5; }
   .lamp.open .lamp-dot { background:var(--error); }
-  .lamp-name { font-weight:700; color:var(--ink); }
-  .lamp-state { font-weight:700; font-size:14px; text-align:right; }
+  .lamp-name { font-size:15px; font-weight:600; color:var(--ink); }
+  .lamp-state { font-weight:600; font-size:13px; text-align:right; }
   .lamp.ok .lamp-state { color:var(--success-deep); }
   .lamp.open .lamp-state { color:var(--error-deep); }
   .lamp-src { font-size:13px; color:var(--mute); }
@@ -343,7 +344,7 @@
   .hyp li { margin:0 0 var(--s-sm); }
 
   /* Report preview */
-  .preview-wrap { margin-top:var(--s-xl); border:1px solid var(--hairline-strong); border-radius:var(--r-sm); background:var(--canvas); }
+  .preview-wrap { margin-top:var(--s-lg); border:1px solid var(--hairline); border-radius:12px; overflow:hidden; background:var(--canvas); }
   .preview { display:block; width:100%; height:min(72vh, 900px); border:0; }
 
   [hidden] { display:none !important; }
@@ -489,7 +490,7 @@
 
   <!-- Screen 1a: Validation error -->
   <section id="screen-invalid" class="screen" aria-labelledby="h-invalid" hidden>
-    <p class="eyebrow">Screen 1a · Configuration preflight</p>
+    <p class="eyebrow">Step 1 of 5 · Configuration preflight</p>
     <h2 id="h-invalid" tabindex="-1">Validation error</h2>
     <div class="meta" id="invalid-run"></div>
     <p class="alert" id="invalid-count" role="alert"></p>
@@ -507,7 +508,7 @@
 
   <!-- Screen 1b: Configuration blocked -->
   <section id="screen-blocked" class="screen" aria-labelledby="h-blocked" hidden>
-    <p class="eyebrow">Screen 1b · Configuration preflight</p>
+    <p class="eyebrow">Step 1 of 5 · Configuration preflight</p>
     <h2 id="h-blocked" tabindex="-1">Configuration blocked</h2>
     <div class="meta" id="blocked-run"></div>
     <p class="alert alert-warn" id="blocked-text" role="status"></p>
@@ -523,7 +524,7 @@
 
   <!-- Screen 2: Pre-check -->
   <section id="screen-precheck" class="screen" aria-labelledby="h-precheck" hidden>
-    <p class="eyebrow">Screen 2 · Step 2 of 5</p>
+    <p class="eyebrow">Step 2 of 5 · Pre-check</p>
     <h2 id="h-precheck" tabindex="-1">Pre-check</h2>
     <div class="meta" id="precheck-run"></div>
     <p class="muted lead">Configuration preflight passed. Every interlock must read OK before START is enabled.</p>
@@ -671,7 +672,7 @@
 
   <!-- Screen 5: Report -->
   <section id="screen-report" class="screen" aria-labelledby="h-report" hidden>
-    <p class="eyebrow">Screen 5 · Step 5 of 5</p>
+    <p class="eyebrow">Step 5 of 5 · Report</p>
     <h2 id="h-report" tabindex="-1">Report</h2>
     <div class="meta" id="report-meta"></div>
     <p class="muted lead">Preview of the HTML report (05 §10). Print / Save PDF prints this report only; choose “Save as PDF” in the print dialog. The banner and footer repeat on every printed page.</p>
