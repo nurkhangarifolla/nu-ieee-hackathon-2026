@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IGBT Test Cell — Self-check (SIMULATION)</title>
+<style>
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:#1b1f24; background:#f6f7f9; }
+  #sim-banner { position:sticky; top:0; background:#ffd666; color:#7a4b00; font-weight:700; text-align:center; padding:8px; border-bottom:2px solid #7a4b00; }
+  main { max-width:1000px; margin:0 auto; padding:20px; }
+  table { border-collapse:collapse; width:100%; background:#fff; }
+  th, td { text-align:left; padding:5px 8px; border-bottom:1px solid #d5dae0; vertical-align:top; }
+  .PASS { color:#0b6b2e; font-weight:700; }
+  .FAIL { color:#a1121b; font-weight:700; }
+  #total { font-size:18px; font-weight:700; margin:12px 0; }
+  code { font-size:12px; }
+</style>
+</head>
+<body>
+<div id="sim-banner"></div>
+<main>
+  <h1>Self-check: validation and configuration preflight</h1>
+  <p>Runs in this browser with the same scripts as <code>index.html</code>.</p>
+  <div id="total"></div>
+  <table><thead><tr><th>#</th><th>Case</th><th>Result</th><th>Detail</th></tr></thead><tbody id="rows"></tbody></table>
+</main>
+
+<script src="js/data.js"></script>
+<script src="js/validate.js"></script>
+<script src="js/rng.js"></script>
+<script src="js/models.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/sequencer.js"></script>
+<script src="js/report.js"></script>
+<script src="js/ui.js"></script>
+<script id="checks">
+window.IGBT.selfcheck = (function () {
+  var V = window.IGBT.validate, D = window.APP_DATA;
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function setup(extra) {
+    var s = { module_id: "DEMO-MODULE-01", profile_id: "demo", scenario_id: "S0", seed: 20261018, speed: 8, operator: "selfcheck" };
+    for (var k in (extra || {})) s[k] = extra[k];
+    return s;
+  }
+  function demo() { return clone(V.findProfile("demo")); }
+  function rule(p, q) { return p.rules.filter(function (r) { return r.quantity_id === q; })[0]; }
+  function fmt(errs) { return errs.map(function (e) { return e.field + " = " + JSON.stringify(e.value) + ": " + e.rule; }).join(" | "); }
+  // expect validation errors, at least one on `field`
+  function rejects(errs, field) {
+    var hit = errs.some(function (e) { return e.field === field; });
+    return { pass: hit, detail: errs.length ? fmt(errs) : "no error raised" };
+  }
+  function invalid(res, field) {
+    if (res.status !== "INVALID") return { pass: false, detail: "status " + res.status };
+    return rejects(res.errors, field);
+  }
+
+  var cases = [];
+  function add(name, fn) { cases.push({ name: name, fn: fn }); }
+
+  // Defaults valid
+  add("Module defaults valid", function () { var e = V.validateModule(clone(D.module_defaults)); return { pass: e.length === 0, detail: e.length ? fmt(e) : "0 errors" }; });
+  D.profiles.forEach(function (p) {
+    add("Profile " + p.profile_id + " valid (incl. bench conditions, " + p.rules.length + " rules)", function () {
+      var e = V.validateProfile(clone(p)); return { pass: e.length === 0, detail: e.length ? fmt(e) : "0 errors" };
+    });
+  });
+  add("Setup defaults valid", function () { var e = V.validateSetup(setup()); return { pass: e.length === 0, detail: e.length ? fmt(e) : "0 errors" }; });
+  add("Preflight S0 with defaults → OK", function () {
+    var r = V.configPreflight(setup()); return { pass: r.status === "OK", detail: "status " + r.status + (r.errors ? ": " + fmt(r.errors) : "") };
+  });
+  add("Derived: t_safe from defaults = 24.85 s (< discharge_timeout_s 120 s)", function () {
+    var t = V.tSafe(demo().bench_conditions); return { pass: t.toFixed(2) === "24.85", detail: "t_safe = " + t.toFixed(4) + " s" };
+  });
+
+  // AC-14 set
+  add("AC-14 r_ce_mohm = −1 rejected (Custom)", function () {
+    return invalid(V.configPreflight(setup({ scenario_id: "CUSTOM", custom_overrides: { module: { r_ce_mohm: -1 }, bench: {} } })), "module.r_ce_mohm");
+  });
+  add("AC-14 dclink_c_mf = 0 rejected", function () {
+    var b = demo().bench_conditions; b.dclink_c_mf = 0; return rejects(V.validateBench(b), "bench.dclink_c_mf");
+  });
+  add("AC-14 v_safe_v = v_dc_test_v rejected", function () {
+    var b = demo().bench_conditions; b.v_safe_v = b.v_dc_test_v; return rejects(V.validateBench(b), "bench.v_safe_v");
+  });
+  add("AC-14 v_safe_v > v_dc_test_v rejected", function () {
+    var b = demo().bench_conditions; b.v_safe_v = 700; return rejects(V.validateBench(b), "bench.v_safe_v");
+  });
+  add("AC-14 speed = 0 rejected", function () { return invalid(V.configPreflight(setup({ speed: 0 })), "setup.speed"); });
+  add("AC-14 window min ≥ max rejected (Q01 0.8–0.8)", function () {
+    var p = demo(); rule(p, "Q01").min = 0.8; return rejects(V.validateProfile(p), "profile.demo.rules.Q01.min");
+  });
+  add("AC-14 window min > max rejected (Q06 16–14)", function () {
+    var p = demo(); rule(p, "Q06").min = 16; rule(p, "Q06").max = 14; return rejects(V.validateProfile(p), "profile.demo.rules.Q06.min");
+  });
+  add("AC-14 info rule with a limit rejected (Q16 max 200)", function () {
+    var p = demo(); rule(p, "Q16").max = 200; return rejects(V.validateProfile(p), "profile.demo.rules.Q16.max");
+  });
+  add("AC-14 demo rule missing a limit rejected (Q09 max null)", function () {
+    var p = demo(); rule(p, "Q09").max = null; return rejects(V.validateProfile(p), "profile.demo.rules.Q09.max");
+  });
+  add("AC-14 unknown override key rejected (module.foo)", function () {
+    return rejects(V.validateOverrides({ module: { foo: 1 }, bench: {} }), "module.foo");
+  });
+  add("AC-14 unknown override key rejected via preflight (Custom)", function () {
+    return invalid(V.configPreflight(setup({ scenario_id: "CUSTOM", custom_overrides: { module: { foo: 1 }, bench: {} } })), "module.foo");
+  });
+
+  // Approval and profile status
+  add("approval_status APPROVED rejected (AC-09)", function () {
+    var p = demo(); rule(p, "Q08").approval_status = "APPROVED"; return rejects(V.validateProfile(p), "profile.demo.rules.Q08.approval_status");
+  });
+  add("profile_status production_approved rejected", function () {
+    var p = demo(); p.profile_status = "production_approved"; return rejects(V.validateProfile(p), "profile.demo.profile_status");
+  });
+
+  // S5 configuration block
+  add("S5 → CONFIG_BLOCKED, block_reason CONFIGURATION_PREFLIGHT", function () {
+    var r = V.configPreflight(setup({ scenario_id: "S5" }));
+    return { pass: r.status === "CONFIG_BLOCKED" && r.block_reason === "CONFIGURATION_PREFLIGHT", detail: "status " + r.status + ", block_reason " + r.block_reason };
+  });
+
+  // Every P0 scenario's overrides valid, and preflight result as expected
+  D.scenarios.filter(function (s) { return s.priority === "P0"; }).forEach(function (s) {
+    add("P0 " + s.scenario_id + " overrides valid; preflight " + (s.force_profile ? "CONFIG_BLOCKED" : "OK"), function () {
+      var e = V.validateOverrides(s.overrides);
+      var r = V.configPreflight(setup({ scenario_id: s.scenario_id }));
+      var want = s.force_profile ? "CONFIG_BLOCKED" : "OK";
+      return { pass: e.length === 0 && r.status === want, detail: (e.length ? fmt(e) + "; " : "0 override errors; ") + "status " + r.status };
+    });
+  });
+
+  function run() {
+    return cases.map(function (c, i) {
+      var r;
+      try { r = c.fn(); } catch (x) { r = { pass: false, detail: "exception: " + x.message }; }
+      return { n: i + 1, name: c.name, result: r.pass ? "PASS" : "FAIL", detail: r.detail };
+    });
+  }
+  return { run: run };
+})();
+
+if (typeof document !== "undefined" && document.getElementById("rows")) {
+  document.getElementById("sim-banner").textContent = window.APP_DATA.fixed_texts.banner;
+  var results = window.IGBT.selfcheck.run();
+  var rows = document.getElementById("rows");
+  results.forEach(function (r) {
+    var tr = document.createElement("tr");
+    [String(r.n), r.name, r.result, r.detail].forEach(function (t, i) {
+      var td = document.createElement("td");
+      td.textContent = t;
+      if (i === 2) td.className = r.result;
+      if (i === 3) td.style.fontSize = "12px";
+      tr.appendChild(td);
+    });
+    rows.appendChild(tr);
+  });
+  var passed = results.filter(function (r) { return r.result === "PASS"; }).length;
+  document.getElementById("total").textContent = "Total: " + passed + " / " + results.length + " PASS";
+  document.getElementById("total").className = passed === results.length ? "PASS" : "FAIL";
+}
+</script>
+</body>
+</html>
