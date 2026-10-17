@@ -111,8 +111,11 @@ window.IGBT.ui = (function () {
   function statusClass(s) {
     return s === "RUNNING" ? "st st-run" : (s === "BLOCKED" || s === "INTERRUPTED") ? "st st-warn" : "st";
   }
+  // Aggregate PASS/FAIL chip for the stage list. Not for the CLOSING stage (T10): its DONE means the safe-state
+  // procedure ran, and its outcome is the safe-state record (verification, door, final state), not its readings.
+  // Each reading keeps its own verdict; engine verdicts are unchanged.
   function stageVerdict(st) {
-    if (st.status !== "DONE") return null;
+    if (st.status !== "DONE" || st["class"] === "CLOSING") return null;
     if (!st.readings.some(function (r) { return r.required; })) return null;
     return E.stagePass(st) ? "PASS" : "FAIL";
   }
@@ -592,8 +595,10 @@ window.IGBT.ui = (function () {
       else {
         enc.appendChild(el("p", { class: "enc-state" + (ss.door === "LOCKED" ? " enc-locked" : ss.final_state === "SAFE" ? " enc-safe" : ""),
           text: "Door " + ss.door }));
+        // No bus voltage when the meter was unavailable: nothing was measured at verification
+        var measured = ss.verification !== "VERIFICATION_UNAVAILABLE" && ss.v_bus_at_verification_v !== null && ss.v_bus_at_verification_v !== undefined;
         enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") + " · verification " + ss.verification +
-          (ss.v_bus_at_verification_v !== null && ss.v_bus_at_verification_v !== undefined ? " · bus at verification " + F.fixed(ss.v_bus_at_verification_v, 2) + " V" : "") }));
+          (measured ? " · bus at verification " + F.fixed(ss.v_bus_at_verification_v, 2) + " V" : "") }));
       }
     }
     var dl = clear($("result-safe"));
@@ -604,7 +609,9 @@ window.IGBT.ui = (function () {
           ["Contactor", ss.contactor_open ? "open" : "closed"],
           ["v_bus at start", F.fixed(ss.v_bus_at_start_v, 1) + " V"],
           ["Discharge", ss.discharge_required ? (ss.discharge_time_s === null ? "required; did not reach v_safe" : "required; " + sec(ss.discharge_time_s)) : "not required"],
-          ["v_bus at verification", F.fixed(ss.v_bus_at_verification_v, 2) + " V"],
+          ["v_bus at verification", ss.verification === "VERIFICATION_UNAVAILABLE"
+            ? "not measured (verification meter unavailable); model value " + F.fixed(ss.v_bus_at_verification_v, 2) + " V"
+            : F.fixed(ss.v_bus_at_verification_v, 2) + " V"],
           ["Verification", ss.verification],
           ["Door", ss.door],
           ["Final state", ss.final_state]
