@@ -9,19 +9,19 @@
 <title>IGBT Test Cell</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAMklEQVR42mNgGAWDCpTtJIz+EwFGLRi1YNSCUQsoseA/lcCoBaMWjFowagElFoyCAQEAswS1rDXX+5EAAAAASUVORK5CYII=">
 <style>
-  /* Tokens: calm light UI proposal (said/ui-premium). Token names are kept so every screen still resolves;
-     colour is reserved for operational states (PASS, FAIL, abort, block, FAULT_LOCKED). */
+  /* Tokens: warm off-white page, white surfaces, graphite text, subtle grey borders and one restrained green
+     accent (primary action, progress, current step). Status colours only for operational states. */
   :root {
-    --primary:#1d1d1f; --primary-dark:#000000; --on-primary:#ffffff;
-    --ink:#1d1d1f; --body:#1d1d1f; --label:#3a3a3c; --mute:#6e6e73; --stone:#86868b; --ash:#aeaeb2;
-    --page:#f5f5f7; --canvas:#ffffff; --surface-soft:#f5f5f7; --surface-dark:#1d1d1f; --surface-elevated:#2c2c2e;
-    --hairline:#e5e5e7; --hairline-strong:#8e8e93; --control:#8e8e93; --button-line:#d2d2d7;
+    --primary:#2f6b4f; --primary-dark:#24563f; --on-primary:#ffffff; --accent-soft:#e7f0ea;
+    --ink:#23262b; --body:#2b2e33; --label:#3d4046; --mute:#676a70; --stone:#86888c; --ash:#b2b2b0;
+    --page:#f6f4ef; --canvas:#ffffff; --surface-soft:#f4f2ed; --surface-dark:#23262b; --surface-elevated:#2c2e33;
+    --hairline:#e6e3dc; --hairline-strong:#8c8a84; --control:#8c8a84; --button-line:#d9d6ce;
     --on-dark:#ffffff; --on-dark-mute:rgba(255,255,255,0.72);
     --error:#e52020; --error-deep:#650b0b; --warning:#df6500; --warning-bright:#ef9100;
     --success-deep:#3f8500; --yellow-pale:#feeeb2; --fault-bg:#d91c1c;
-    --notice-bg:#ebebed; --err-bg:#fff5f5; --err-line:#f4c7c7; --warn-bg:#fff8ef; --warn-line:#f3d2ad; --warn-text:#7a3e00;
-    --row-hover:#fbfbfb; --log-warn-bg:#fffaf2; --backdrop:rgba(0, 0, 0, 0.4);
-    --card-shadow:0 0 0 1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.04); --dialog-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
+    --notice-bg:#eeebe4; --err-bg:#fff5f5; --err-line:#f4c7c7; --warn-bg:#fff8ef; --warn-line:#f3d2ad; --warn-text:#7a3e00;
+    --row-hover:#faf9f6; --log-warn-bg:#fffaf2; --backdrop:rgba(0, 0, 0, 0.4);
+    --card-shadow:0 0 0 1px rgba(60, 50, 30, 0.06), 0 1px 3px rgba(60, 50, 30, 0.05); --dialog-shadow:0 12px 40px rgba(0, 0, 0, 0.18);
     color-scheme:light;
     --r-sm:6px; --r-md:10px; --r-lg:16px;
     --s-xs:4px; --s-sm:8px; --s-md:12px; --s-lg:16px; --s-xl:24px; --s-xxl:32px; --s-section:64px;
@@ -29,18 +29,18 @@
     --z-banner:30; --z-skip:40;
     --font:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
-  /* Dark theme (js/theme.js sets data-theme on <html> before first paint). Same tokens, near-black surfaces;
-     the primary button inverts; status colours are lifted so text keeps at least 4.5:1 on the dark surfaces. */
+  /* Dark theme (js/theme.js sets data-theme on <html> before first paint): charcoal equivalents, a lighter green
+     accent with dark text, status colours lifted so text keeps at least 4.5:1. */
   :root[data-theme="dark"] {
     color-scheme:dark;
-    --primary:#f2f2f3; --primary-dark:#ffffff; --on-primary:#0b0b0c;
-    --ink:#f2f2f3; --body:#e4e4e7; --label:#c7c7cc; --mute:#a1a1a8; --stone:#8a8a91; --ash:#6c6c73;
-    --page:#0b0b0c; --canvas:#151517; --surface-soft:#1e1e21;
-    --hairline:#2b2b30; --hairline-strong:#6e6e76; --control:#73737b; --button-line:#3a3a40;
+    --primary:#74c393; --primary-dark:#8fd2a8; --on-primary:#10201a; --accent-soft:#22332a;
+    --ink:#eceae5; --body:#e2e0db; --label:#cac8c3; --mute:#a5a39e; --stone:#8c8a86; --ash:#6b6a67;
+    --page:#1a1b1d; --canvas:#232427; --surface-soft:#2b2c30;
+    --hairline:#36373c; --hairline-strong:#7d7d82; --control:#7d7d82; --button-line:#45464b;
     --error:#ff5f57; --error-deep:#ff9b95; --warning:#f5a524; --success-deep:#63d06b; --fault-bg:#b3261e;
-    --notice-bg:#1a1a1d; --err-bg:#2a1515; --err-line:#5c2626; --warn-bg:#2a2012; --warn-line:#5e4421; --warn-text:#f6c47e;
-    --row-hover:#1a1a1d; --log-warn-bg:#241d11; --backdrop:rgba(0, 0, 0, 0.65);
-    --card-shadow:0 0 0 1px #232327; --dialog-shadow:0 0 0 1px #2b2b30, 0 16px 48px rgba(0, 0, 0, 0.6);
+    --notice-bg:#202124; --err-bg:#2f1d1d; --err-line:#5c2626; --warn-bg:#2a2012; --warn-line:#5e4421; --warn-text:#f6c47e;
+    --row-hover:#26272a; --log-warn-bg:#2a2416; --backdrop:rgba(0, 0, 0, 0.65);
+    --card-shadow:0 0 0 1px #2e2f33; --dialog-shadow:0 0 0 1px #2b2b30, 0 16px 48px rgba(0, 0, 0, 0.6);
   }
   * { box-sizing:border-box; }
   html { -webkit-text-size-adjust:100%; scroll-padding-top:96px; -webkit-tap-highlight-color:transparent; }
@@ -85,7 +85,7 @@
   .steps li .n { font-variant-numeric:tabular-nums; }
   .steps li.done { color:var(--label); }
   .steps li.done .n::after { content:" ✓"; }
-  .steps li[aria-current="step"] { background:var(--surface-soft); color:var(--ink); font-weight:600; }
+  .steps li[aria-current="step"] { background:var(--accent-soft); color:var(--ink); font-weight:600; }
 
   /* Buttons: dark neutral primary, quiet secondary */
   button { font:600 15px/1.25 var(--font); min-height:44px; padding:0 20px; border-radius:var(--r-md);
@@ -123,8 +123,9 @@
   select:disabled { background:var(--surface-soft); color:var(--mute); border-color:var(--hairline); cursor:not-allowed; }
 
   /* Setup (Screen 1): one column; common scenarios first, full selector and Advanced kept secondary */
-  .setup-head { margin-bottom:var(--s-xl); }
-  .setup-body { display:grid; gap:var(--s-xl); max-width:760px; }
+  #screen-setup { max-width:520px; margin:var(--s-xl) auto 0; padding:40px 40px 36px; }
+  .setup-head { margin-bottom:28px; }
+  .setup-body { display:grid; gap:20px; }
   .group-title { display:block; font-size:15px; font-weight:600; line-height:1.4; color:var(--ink); margin:0 0 var(--s-md); }
   .fields { display:grid; gap:var(--s-md) var(--s-lg); }
   .fields-2 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
@@ -155,7 +156,8 @@
   details.inline-details[open] > summary::before { transform:rotate(90deg); }
   details.inline-details > summary:hover { color:var(--ink); }
   details.inline-details > :not(summary) { margin:var(--s-xs) 0 0; }
-  .setup-actions { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-sm) var(--s-lg); margin-top:var(--s-xl); }
+  .setup-actions { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-sm) var(--s-lg); margin-top:32px; }
+  .setup-actions .primary { width:100%; min-height:48px; }
   .setup-actions p { margin:0; }
   #screen-setup .panel { margin-top:var(--s-xxl); padding-top:0; border-top:none; }
 
@@ -213,7 +215,7 @@
   .st-pass { border-color:var(--success-deep); color:var(--success-deep); background:var(--canvas); }
   .st-fail { border-color:var(--error); color:var(--error-deep); background:var(--canvas); }
   .st-warn { border-color:var(--warning); color:var(--ink); background:var(--canvas); box-shadow:inset 3px 0 0 var(--warning); }
-  .st-run { border-color:var(--primary); color:var(--on-primary); background:var(--primary); }
+  .st-run { border-color:var(--ink); color:var(--canvas); background:var(--ink); }
   .st-lock { border-color:var(--fault-bg); color:#ffffff; background:var(--fault-bg); }
   .verdict-pass { color:var(--success-deep); background:var(--canvas); border-color:var(--success-deep); }
   .verdict-fail { color:var(--error-deep); background:var(--canvas); border-color:var(--error); }
@@ -311,14 +313,18 @@
   .stage-list li.active .cls { display:block; }
   .stage-list li.skipped .nm, .stage-list li.skipped .id { color:var(--mute); }
   .progress { height:4px; background:var(--hairline); margin-top:6px; border-radius:2px; overflow:hidden; }
-  .progress > span { display:block; height:100%; background:var(--ink); }
+  .progress > span { display:block; height:100%; background:var(--primary); }
 
   .active-zone { padding-bottom:var(--s-md); }
   .readings-zone { margin:var(--s-sm) -8px 0; padding:var(--s-md) var(--s-md) var(--s-xs); background:var(--surface-soft); border-radius:var(--r-md); }
   .readings-zone h3.sub { margin:0 0 var(--s-md); color:var(--label); }
   .readings-zone h3.sub .muted { font-size:13px; font-weight:400; }
   .readings-zone .rcard { border-top-color:var(--button-line); }
-  .active-name { font-size:18px; font-weight:600; line-height:1.35; color:var(--ink); margin:0; }
+  .active-name { font-size:24px; font-weight:600; line-height:1.3; letter-spacing:-0.01em; color:var(--ink); margin:0; }
+  .current-col { padding:20px 24px; }
+  .current-col .active-progress .progress { height:8px; border-radius:4px; }
+  .bench-col .kv { gap:4px var(--s-md); }
+  .bench-col .kv dt, .bench-col .kv dd { font-size:13px; }
   .active-meta { margin:var(--s-xs) 0 0; font-size:13px; color:var(--mute); }
   .rcard { padding:var(--s-md) 0; border-top:1px solid var(--hairline); }
   .rcard:first-child { border-top:none; padding-top:0; }
@@ -425,8 +431,8 @@
   .hyp li { margin:0 0 var(--s-sm); }
 
   /* Report preview */
-  .preview-wrap { margin-top:var(--s-lg); border:1px solid var(--hairline); border-radius:12px; overflow:hidden; background:var(--canvas); }
-  .preview { display:block; width:100%; height:min(72vh, 900px); border:0; }
+  .preview-wrap { max-width:940px; margin:var(--s-lg) auto 0; border:1px solid var(--hairline); border-radius:12px; overflow:hidden; background:#ffffff; }
+  .preview { display:block; width:100%; height:900px; border:0; }
 
   [hidden] { display:none !important; }
 
@@ -488,72 +494,33 @@
     </div>
 
     <div class="setup-body">
-      <div role="group" aria-label="Module and operator">
-        <div class="fields fields-2">
-          <div class="field">
-            <label for="in-module-id">Module ID</label>
-            <input type="text" id="in-module-id" name="module_id" autocomplete="off" spellcheck="false">
-          </div>
-          <div class="field">
-            <label for="in-operator">Operator</label>
-            <input type="text" id="in-operator" name="operator" autocomplete="off" placeholder="Name or initials…">
-          </div>
-        </div>
+      <div class="field">
+        <label for="in-module-id">Module ID</label>
+        <input type="text" id="in-module-id" name="module_id" autocomplete="off" spellcheck="false">
       </div>
-
-      <div>
-        <h3 class="group-title" id="g-scenario">Scenario</h3>
-        <!-- Shortcuts only: each sets the full selector below and fires its existing change handler -->
-        <div class="quick" id="quick-scenarios" role="group" aria-labelledby="g-scenario">
-          <button type="button" class="choice" data-scenario="S0" aria-pressed="false"><span>Healthy</span><span class="choice-s"></span></button>
-          <button type="button" class="choice" data-scenario="S4" aria-pressed="false"><span>Interrupted</span><span class="choice-s"></span></button>
-          <button type="button" class="choice" data-scenario="S8" aria-pressed="false"><span>Failed discharge</span><span class="choice-s"></span></button>
-        </div>
-        <div class="scenario-all">
-          <label class="sub-label" for="in-scenario">All scenarios</label>
-          <select id="in-scenario" name="scenario"></select>
-          <details class="inline-details">
-            <summary>Scenario inputs</summary>
-            <div id="scenario-overrides" class="muted field-note" aria-live="polite"></div>
-          </details>
-        </div>
+      <div class="field">
+        <label for="in-operator">Operator</label>
+        <input type="text" id="in-operator" name="operator" autocomplete="off" placeholder="Name or initials…">
       </div>
-
-      <details class="advanced" id="setup-advanced">
-        <summary>Advanced <span class="muted" id="advanced-summary"></span></summary>
-        <div class="adv-body fields fields-4">
-          <div class="field">
-            <label for="in-profile">Profile</label>
-            <select id="in-profile" name="profile"></select>
-            <span id="profile-forced" class="muted field-note" hidden>Set by the scenario</span>
-          </div>
-          <div class="field">
-            <label for="in-noise">Noise</label>
-            <select id="in-noise" name="noise"></select>
-          </div>
-          <div class="field">
-            <label for="in-seed">Seed</label>
-            <input type="text" id="in-seed" name="seed" inputmode="numeric" autocomplete="off" spellcheck="false">
-          </div>
-          <div class="field">
-            <label for="in-speed">Speed</label>
-            <select id="in-speed" name="speed"></select>
-          </div>
-        </div>
-        <div id="noise-note" class="muted field-note" aria-live="polite"></div>
-      </details>
     </div>
 
-    <div id="custom-panel" class="panel" hidden>
-      <h3>Custom module parameters</h3>
-      <p class="muted">Values are checked before the run.</p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col">Unit</th><th scope="col">Note</th></tr></thead>
-          <tbody id="custom-body"></tbody>
-        </table>
+    <!-- Run configuration, not part of the operator flow: a supported scenario preset is chosen at random once per
+         new test (ui.js choosePreset) and held for the run; playback 16×; standard profile; noise off. The JSON
+         report records scenario_id, seed and every input, so each run stays reproducible. -->
+    <div id="run-config" hidden>
+      <select id="in-scenario" name="scenario" aria-hidden="true" tabindex="-1"></select>
+      <div id="scenario-overrides"></div>
+      <select id="in-profile" name="profile" aria-hidden="true" tabindex="-1"></select>
+      <span id="profile-forced" hidden></span>
+      <select id="in-noise" name="noise" aria-hidden="true" tabindex="-1"></select>
+      <div id="noise-note"></div>
+      <input type="text" id="in-seed" name="seed" aria-hidden="true" tabindex="-1">
+      <select id="in-speed" name="speed" aria-hidden="true" tabindex="-1"></select>
+      <span id="advanced-summary"></span>
+      <div id="custom-panel" hidden>
+        <table><tbody id="custom-body"></tbody></table>
+        <button type="button" id="btn-reset-custom" tabindex="-1">Reset to defaults</button>
       </div>
-      <button type="button" id="btn-reset-custom">Reset to defaults</button>
     </div>
 
     <div class="setup-actions">
@@ -649,6 +616,12 @@
         </div>
       </div>
       <div class="side-col">
+        <div class="block bench-col">
+          <h3>Bench</h3>
+          <dl class="kv" id="bench"></dl>
+          <div class="meter" aria-hidden="true"><span id="bus-bar"></span></div>
+          <p class="muted small" id="bus-scale"></p>
+        </div>
         <div class="stages-col">
           <h3>Checks</h3>
           <ol class="stage-list" id="stage-list"></ol>
@@ -665,13 +638,8 @@
     </div>
 
     <details class="section-details" id="run-tech">
-      <summary>Technical details <span class="muted">bench state, clocks, model</span></summary>
+      <summary>Technical details <span class="muted">clocks, model</span></summary>
       <div class="tech-grid">
-        <div>
-          <dl class="kv" id="bench"></dl>
-          <div class="meter" aria-hidden="true"><span id="bus-bar"></span></div>
-          <p class="muted small" id="bus-scale"></p>
-        </div>
         <div>
           <div class="clocks" aria-live="off">
             <div class="clock"><span class="k">Estimated physical time</span><span class="v" id="clock-phys"></span></div>

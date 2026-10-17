@@ -164,6 +164,27 @@ window.IGBT.ui = (function () {
     });
   }
 
+  // ---- Run configuration for the operator flow (no scenario controls on screen) ----
+  // Playback defaults to 16×. A supported preset is drawn at random once per new test and held for the run:
+  // built presets only (P0/P1), never Custom and never a preset that forces the configuration-blocked profile.
+  // Only the starting conditions (the preset) are random; the engine, rules and verdicts are untouched, and the
+  // JSON records scenario_id and seed so the run can be reproduced (node dev/run-node.js <scenario_id>).
+  var DEFAULT_SPEED = 16;
+  function presetPool(data) {
+    return data.scenarios.filter(function (s) {
+      return data.built_priorities.indexOf(s.priority) >= 0 && !s.custom && !s.force_profile;
+    }).map(function (s) { return s.scenario_id; });
+  }
+  function pickPreset(data, rand) {
+    var pool = presetPool(data), r = typeof rand === "function" ? rand() : Math.random();
+    return pool[Math.min(pool.length - 1, Math.floor(r * pool.length))];
+  }
+  function choosePreset() {
+    var sel = $("in-scenario");
+    sel.value = pickPreset(D);
+    state.preset = sel.value;
+  }
+
   function buildSetup() {
     var scSel = $("in-scenario");
     D.scenarios.forEach(function (s) {
@@ -184,7 +205,7 @@ window.IGBT.ui = (function () {
     pSel.value = state.userProfile;
     scSel.value = "S0";
     $("in-seed").value = String(D.seed_default);
-    spSel.value = String(V.findProfile("demo").bench_conditions.speed_default);
+    spSel.value = String(DEFAULT_SPEED);
 
     buildCustomTable();
     buildQuickScenarios();
@@ -198,13 +219,14 @@ window.IGBT.ui = (function () {
     $("btn-reset-custom").addEventListener("click", function () { buildCustomTable(); });
     Array.prototype.forEach.call(document.querySelectorAll(".btn-back"), function (b) { b.addEventListener("click", backToSetup); });
     newRunId();
+    choosePreset();
     refreshSetup();
   }
   function newRunId() { state.runId = nextRunId(); $("run-id").textContent = state.runId; }
   function backToSetup() {
     stopTimer();
     state.run = null; state.report = null; state.blocked = null; state.view = null;
-    newRunId(); refreshSetup(); showScreen("screen-setup");
+    newRunId(); choosePreset(); refreshSetup(); showScreen("screen-setup");
   }
 
   // Custom: editable module-parameter table with units (module_id is set above, module_note is fixed)
@@ -686,7 +708,7 @@ window.IGBT.ui = (function () {
     if (!rep) return;
     state.view = { from: from, report: rep };
     var o = rep.deterministic.overall, inp = rep.deterministic.inputs;
-    $("report-meta").textContent = rep.metadata.run_id + " · scenario " + inp.scenario_id + " (" + inp.scenario_name + ") · overall " + o.verdict;
+    $("report-meta").textContent = rep.metadata.run_id + " · module " + inp.module_parameters.module_id + " · " + REP.text.outcomeKind(rep.deterministic).title;
     $("report-files").textContent = "Files: " + REP.fileName(rep, "html") + " · " + REP.fileName(rep, "json");
     renderAiBar();
     $("btn-report-back").textContent = from === "blocked" ? "Back" : "Back to outcome";
@@ -775,6 +797,10 @@ window.IGBT.ui = (function () {
       $("btn-report-back").addEventListener("click", reportBack);
       $("btn-report-new").addEventListener("click", backToSetup);
       $("btn-report-print").addEventListener("click", printReport);
+      // The report preview grows with its content, so the page scrolls once (no nested scroll area)
+      $("report-preview").addEventListener("load", function () {
+        try { var d = this.contentDocument; this.style.height = Math.max(400, d.documentElement.scrollHeight + 4) + "px"; } catch (e) { /* keep CSS height */ }
+      });
       $("btn-report-html").addEventListener("click", function () { if (state.view) REP.downloadHtml(state.view.report, { ai: aiFor(state.view.report) }); });
       if ($("btn-ai-generate")) $("btn-ai-generate").addEventListener("click", generateAi);
       $("btn-report-json").addEventListener("click", function () { if (state.view) REP.download(state.view.report); });
@@ -786,5 +812,6 @@ window.IGBT.ui = (function () {
   if (typeof document !== "undefined") {
     document.addEventListener("DOMContentLoaded", function () { if ($("app")) init(); });
   }
-  return { init: init, readCustomOverrides: readCustomOverrides, state: state };
+  return { init: init, readCustomOverrides: readCustomOverrides, state: state,
+           presetPool: presetPool, pickPreset: pickPreset, DEFAULT_SPEED: DEFAULT_SPEED };
 })();

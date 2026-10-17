@@ -890,6 +890,41 @@ window.IGBT.selfcheck = (function () {
     return { pass: ok, detail: seq.join(" → ") + "; unexpected: " + (none.join(", ") || "none") + "; door " + d.safe_state.door + "; HTML " + html.length + " chars" };
   });
 
+  // ---- Operator flow (18 Oct): random supported preset per new test, 16× playback; verdicts stay engine-derived ----
+  var UIX = window.IGBT.ui;
+  add("Operator flow: preset pool = built presets, no Custom, no configuration-blocked profile", function () {
+    var pool = UIX.presetPool(D), want = D.scenarios.filter(function (s) {
+      return D.built_priorities.indexOf(s.priority) >= 0 && !s.custom && !s.force_profile; }).map(function (s) { return s.scenario_id; });
+    var ok = eq(pool, want) && pool.indexOf("CUSTOM") < 0 && pool.indexOf("S5") < 0 &&
+      pool.every(function (id) { return D.built_priorities.indexOf(V.findScenario(id).priority) >= 0; }) && pool.length >= 5;
+    return { pass: ok, detail: pool.join(", ") };
+  });
+  add("Operator flow: pickPreset covers every pool member and stays in the pool", function () {
+    var pool = UIX.presetPool(D), seen = {}, ok = true;
+    pool.forEach(function (_, i) { var id = UIX.pickPreset(D, function () { return (i + 0.5) / pool.length; }); seen[id] = true; ok = ok && id === pool[i]; });
+    [0, 0.999999, 1].forEach(function (r) { ok = ok && pool.indexOf(UIX.pickPreset(D, function () { return r; })) >= 0; });
+    for (var k = 0; k < 200; k++) ok = ok && pool.indexOf(UIX.pickPreset(D)) >= 0;
+    return { pass: ok && Object.keys(seen).length === pool.length, detail: Object.keys(seen).length + " of " + pool.length + " reachable; 200 random draws in pool" };
+  });
+  add("Operator flow: default playback is 16× and a supported speed", function () {
+    return { pass: UIX.DEFAULT_SPEED === 16 && D.speeds.indexOf(16) >= 0, detail: UIX.DEFAULT_SPEED + "× in [" + D.speeds.join(", ") + "]" };
+  });
+  add("Operator flow: every preset at 16× preflights OK, records scenario_id/seed/speed, and repeats identically", function () {
+    var bad = [];
+    UIX.presetPool(D).forEach(function (id) {
+      var st = setup({ scenario_id: id }); st.speed = UIX.DEFAULT_SPEED;
+      var pre = V.configPreflight(st);
+      if (pre.status !== "OK") { bad.push(id + " " + pre.status); return; }
+      var a = REP.buildJson(SEQ.runToEnd(SEQ.create(pre)), { run_id: "RUN-SELFCHECK", operator: "selfcheck" });
+      var b = REP.buildJson(SEQ.runToEnd(SEQ.create(V.configPreflight(st))), { run_id: "RUN-SELFCHECK", operator: "selfcheck" });
+      var i = a.deterministic.inputs;
+      if (i.scenario_id !== id || i.seed !== st.seed || i.speed !== 16) bad.push(id + " inputs");
+      if (JSON.stringify(a.deterministic) !== JSON.stringify(b.deterministic)) bad.push(id + " not reproducible");
+      if (a.deterministic.overall.verdict !== rep(id).deterministic.overall.verdict) bad.push(id + " verdict differs from speed-8 run");
+    });
+    return { pass: !bad.length, detail: bad.length ? bad.join("; ") : UIX.presetPool(D).length + " presets OK at 16×" };
+  });
+
   function run() {
     return cases.map(function (c, i) {
       var r;
