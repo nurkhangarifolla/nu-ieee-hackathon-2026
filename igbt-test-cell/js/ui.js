@@ -151,13 +151,37 @@ window.IGBT.ui = (function () {
       if (sc.force_profile) parts.push("force_profile = " + sc.force_profile);
       ov.textContent = parts.length ? "Scenario inputs: " + parts.join("; ") : "Scenario inputs: defaults (no overrides)";
     }
+    syncSetupSummary();
+  }
+  // Display only: the scenario shortcuts mirror the full selector; the Advanced summary shows its current values
+  function syncSetupSummary() {
+    var id = $("in-scenario").value;
+    Array.prototype.forEach.call(document.querySelectorAll("#quick-scenarios [data-scenario]"), function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-scenario") === id));
+    });
+    if ($("advanced-summary")) $("advanced-summary").textContent = "profile " + effectiveProfileId() + " · noise " + $("in-noise").value +
+      " · seed " + $("in-seed").value + " · " + $("in-speed").value + "×";
+  }
+  // Each shortcut sets the full selector and fires its change handler (refreshSetup), the same path as picking it there
+  function buildQuickScenarios() {
+    var scSel = $("in-scenario");
+    Array.prototype.forEach.call(document.querySelectorAll("#quick-scenarios [data-scenario]"), function (b) {
+      var sc = V.findScenario(b.getAttribute("data-scenario"));
+      var opt = sc && Array.prototype.filter.call(scSel.options, function (o) { return o.value === sc.scenario_id && !o.disabled; })[0];
+      if (!opt) { b.hidden = true; return; }
+      b.querySelector(".choice-s").textContent = sc.scenario_id + " · " + sc.name;
+      b.addEventListener("click", function () {
+        scSel.value = sc.scenario_id;
+        scSel.dispatchEvent(new Event("change"));
+      });
+    });
   }
 
   function buildSetup() {
     var scSel = $("in-scenario");
     D.scenarios.forEach(function (s) {
       var built = D.built_priorities.indexOf(s.priority) >= 0;
-      var o = el("option", { value: s.scenario_id, text: s.scenario_id + " · " + s.name + " (" + s.priority + ")" + (built ? "" : " — not built yet") });
+      var o = el("option", { value: s.scenario_id, text: s.scenario_id + " · " + s.name + (built ? "" : " — not built yet") });
       if (!built) o.disabled = true;
       scSel.appendChild(o);
     });
@@ -176,7 +200,10 @@ window.IGBT.ui = (function () {
     spSel.value = String(V.findProfile("demo").bench_conditions.speed_default);
 
     buildCustomTable();
+    buildQuickScenarios();
     nSel.value = "off";
+    $("in-seed").addEventListener("input", syncSetupSummary);
+    spSel.addEventListener("change", syncSetupSummary);
     scSel.addEventListener("change", refreshSetup);
     nSel.addEventListener("change", refreshSetup);
     pSel.addEventListener("change", function () { state.userProfile = pSel.value; refreshSetup(); });
@@ -433,12 +460,15 @@ window.IGBT.ui = (function () {
     return last;
   }
   function renderReadings(run) {
-    var st = focusStage(run);
-    var key = st ? st.test_id + "|" + st.status + "|" + st.readings.map(function (r) { return r.verdict; }).join(",") : "none";
+    var st = focusStage(run), active = SEQ.activeStage(run);
+    var fromActive = !!st && !!active && active.test_id === st.test_id;
+    var key = st ? st.test_id + "|" + st.status + "|" + fromActive + "|" + st.readings.map(function (r) { return r.verdict; }).join(",") : "none";
     if (key === state.focusKey) return;
     state.focusKey = key;
     var box = clear($("reading-cards")), eq = $("equation");
-    $("readings-of").textContent = st ? "· " + st.test_id : "";
+    // Say whose readings these are: the running test's own, or the last completed test's
+    if ($("readings-kind")) $("readings-kind").textContent = fromActive ? "Readings from the active test" : "Latest completed readings";
+    $("readings-of").textContent = st ? "· " + st.test_id + " " + st.name : "";
     if (!st) { box.appendChild(el("p", { class: "empty", text: "No readings yet. Readings appear when a stage with module readings completes." })); eq.hidden = true; return; }
     st.readings.forEach(function (r) {
       var u = unitOf(r);
@@ -464,10 +494,10 @@ window.IGBT.ui = (function () {
     var b = SEQ.bench(run), bc = run.inputs.bench_conditions;
     var dl = clear($("bench"));
     var open = D.interlocks.filter(function (il) { return !run.interlocks[il.id]; }).map(function (il) { return il.id; });
-    [["v_bus_v", F.fixed(b.v_bus_v, 1) + " V"],
+    [["Enclosure door", b.door_locked ? "LOCKED" : "UNLOCKED"],
+     ["Bus voltage", F.fixed(b.v_bus_v, 1) + " V"],
      ["HV source", b.source_enabled ? "ENABLED" : "DISABLED"],
      ["Contactor", b.contactor_closed ? "CLOSED" : "OPEN"],
-     ["Door", b.door_locked ? "LOCKED" : "UNLOCKED"],
      ["Gate command", b.gate_cmd],
      ["Gate measured", F.fixed(b.gate_meas_v, 1) + " V"],
      ["Interlocks", open.length ? open.join(", ") + " OPEN" : "IL1–IL7 OK"]
@@ -475,7 +505,7 @@ window.IGBT.ui = (function () {
     var bar = $("bus-bar");
     bar.style.width = Math.max(0, Math.min(100, 100 * b.v_bus_v / bc.v_dc_test_v)) + "%";
     bar.className = b.v_bus_v <= bc.v_safe_v ? "low" : "";
-    $("bus-scale").textContent = "Bar: v_bus_v on a 0 to " + F.num(bc.v_dc_test_v) + " V scale · v_safe " + F.num(bc.v_safe_v) + " V";
+    $("bus-scale").textContent = "Bus voltage on a 0–" + F.num(bc.v_dc_test_v) + " V scale · safe below " + F.num(bc.v_safe_v) + " V";
   }
 
   function renderLog(run) {
@@ -497,6 +527,9 @@ window.IGBT.ui = (function () {
     }
     state.logCount = run.events.length;
     if (nearBottom) wrap.scrollTop = wrap.scrollHeight;
+    var lastEv = run.events[run.events.length - 1];
+    if ($("log-count")) $("log-count").textContent = run.events.length + (run.events.length === 1 ? " event" : " events") +
+      (lastEv ? " · latest " + lastEv.type + " at " + F.fixed(lastEv.physical_time_s, 2) + " s" : "");
   }
 
   // Demo controls: abort triggers while RUNNING; logged and ignored during the safe-state procedure
@@ -551,7 +584,19 @@ window.IGBT.ui = (function () {
       hyp.appendChild(el("li", { text: (h.source === "SAFE_STATE" ? "Safe state" : h.source + " (" + h.quantity_ids.join(", ") + ")") + ": " + h.text }));
     });
 
-    var dl = clear($("result-safe")), ss = det.safe_state;
+    var ss = det.safe_state, enc = $("result-enclosure");
+    // Enclosure summary (display only): the door and final state from the safe-state record; details stay in the Safe state block
+    if (enc) {
+      clear(enc);
+      if (!ss) enc.appendChild(el("p", { class: "enc-state", text: "Safe-state procedure not run" }));
+      else {
+        enc.appendChild(el("p", { class: "enc-state" + (ss.door === "LOCKED" ? " enc-locked" : ss.final_state === "SAFE" ? " enc-safe" : ""),
+          text: "Door " + ss.door }));
+        enc.appendChild(el("p", { class: "enc-detail", text: "Final state " + String(ss.final_state).replace(/_/g, " ") + " · verification " + ss.verification +
+          (ss.v_bus_at_verification_v !== null && ss.v_bus_at_verification_v !== undefined ? " · bus at verification " + F.fixed(ss.v_bus_at_verification_v, 2) + " V" : "") }));
+      }
+    }
+    var dl = clear($("result-safe"));
     if (!ss) dl.appendChild(el("dd", { class: "muted", text: "Safe-state procedure not run." }));
     else [["Trigger", ss.trigger + (o.abort_reason && ss.trigger === "ABORT" ? " (" + o.abort_reason + ")" : "")],
           ["Gate", "commanded OFF · measured " + F.fixed(ss.gate_measured_v, 1) + " V · " + (ss.gate_off_confirmed ? "confirmed" : "NOT confirmed")],
