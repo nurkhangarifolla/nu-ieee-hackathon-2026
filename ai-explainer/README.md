@@ -1,6 +1,6 @@
 # Optional synthetic report explainer
 
-Separate from `igbt-test-cell/`: no simulator integration or changes. Node 22+ and Internet access are required for explanations. No dependencies, install, package manifest, database or accounts. The offline simulator remains independent.
+Separate from `igbt-test-cell/`; it can also serve that app at `/app/` for the report AI section (see Report integration). Node 22+ and Internet access are required for explanations. No dependencies, install, package manifest, database or accounts. The offline simulator remains independent.
 
 ## Start (PowerShell, from repository root)
 
@@ -20,6 +20,12 @@ Open **http://127.0.0.1:8787** manually. Use the literal IP, not localhost or a 
 1. Export JSON from the simulator; select that file here.
 2. Review the outcome, verification warning and expandable **exact outgoing evidence**. File selection does not contact OpenAI.
 3. Click **Explain result**. One request is sent; concurrent clicks are ignored. Errors never retry automatically. A later deliberate click makes a new request and may incur another API charge.
+
+## Report integration (test-cell app)
+
+The same service also serves the test-cell app read-only at **http://127.0.0.1:8787/app/** (same loopback, Host and Origin rules). The served page gets one added module, `/app-ai.mjs`, which registers `window.IGBT_AI`. On the app's Report screen, **Generate AI analysis** sends this run's projected evidence (the same `prepareReport` projection and server-side validation as the explainer page) once; nothing is sent before that click. The generated summary and cited evidence appear in report section **B. AI analysis** and are included in Save PDF and Download HTML. A failure is shown as an error with the same diagnostics and adds nothing to the report. The JSON export is unchanged.
+
+`igbt-test-cell/` itself still has no network code: opened from `file://` it works offline as before, the AI button is not shown, and section B states that no AI analysis was generated. Architecture change: AI requires running this local service with `OPENAI_API_KEY` in its environment and Internet access; the key never reaches the browser.
 
 ## Data and limits
 

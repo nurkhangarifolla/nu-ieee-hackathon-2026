@@ -13,6 +13,35 @@ const headers = {
   'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 };
+// The test-cell app (igbt-test-cell/) is served read-only at /app/ so its report screen can request an analysis
+// without a JSON download/upload. The app itself has no network code: the served index.html gets one added module,
+// /app-ai.mjs, which registers window.IGBT_AI. Opened from file:// the app works as before, without AI.
+const APP_DIR = new URL('../igbt-test-cell/', import.meta.url);
+const APP_JS = /^\/app\/js\/([a-z]+)\.js$/;
+const appHeaders = {
+  ...headers,
+  // Inline <style> in the app and in the report preview (srcdoc) needs style-src 'unsafe-inline'; scripts stay 'self' only.
+  'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+};
+async function serveApp(req, res) {
+  let name, type;
+  if (req.url === '/app/' || req.url === '/app/index.html') { name = 'index.html'; type = 'text/html'; }
+  else if (req.url === '/app-ai.mjs') {
+    const data = await readFile(new URL('public/app-ai.mjs', import.meta.url));
+    res.writeHead(200, { ...appHeaders, 'Content-Type': 'text/javascript; charset=utf-8' }); res.end(data); return true;
+  } else {
+    const m = APP_JS.exec(req.url);
+    if (!m) return false;
+    name = 'js/' + m[1] + '.js'; type = 'text/javascript';
+  }
+  let data = await readFile(new URL(name, APP_DIR), 'utf8');
+  if (name === 'index.html') {
+    if (!data.includes('</body>')) throw new Error('index.html has no </body>');
+    data = data.replace('</body>', '<script type="module" src="/app-ai.mjs"></script>\n</body>');
+  }
+  res.writeHead(200, { ...appHeaders, 'Content-Type': `${type}; charset=utf-8` }); res.end(data);
+  return true;
+}
 function reply(res, status, data) {
   res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
@@ -43,6 +72,11 @@ export function createExplainerServer(options = {}) {
         res.writeHead(200, { ...headers, 'Content-Type': `${type}; charset=utf-8` }); res.end(data);
       } catch { reply(res, 500, { error: 'Local page files could not be read.' }); }
       return;
+    }
+    if (req.method === 'GET' && req.url === '/app') { res.writeHead(308, { ...headers, Location: '/app/' }); res.end(); return; }
+    if (req.method === 'GET') {
+      try { if (await serveApp(req, res)) return; }
+      catch { return reply(res, 404, { error: 'Not found.' }); }
     }
     if (req.url !== '/api/explain') return reply(res, 404, { error: 'Not found.' });
     if (req.method !== 'POST') return reply(res, 405, { error: 'Use POST.' });

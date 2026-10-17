@@ -444,3 +444,35 @@ test('page selection stays local; one click sends only reviewed evidence; output
   assert.match(markup, /Standard limitations — fixed application text/);
   assert.ok(markup.indexOf('id="limitations"') < markup.indexOf('id="result"'));
 });
+
+// ---- Test-cell app served at /app/ (report-screen integration) ----
+test('serves the test-cell app at /app/ with the companion module and a scripts-self-only CSP', async () => {
+  await withServer({ apiKey: 'TEST_ONLY', fetchImpl: async () => { throw new Error('no upstream call expected'); } }, async base => {
+    const page = await fetch(base + '/app/');
+    assert.equal(page.status, 200);
+    const html = await page.text(), csp = page.headers.get('content-security-policy');
+    assert.match(html, /<script type="module" src="\/app-ai\.mjs"><\/script>\n<\/body>/);
+    assert.match(html, /<script src="js\/ui\.js"><\/script>/);
+    assert.match(csp, /script-src 'self';/); assert.doesNotMatch(csp, /script-src[^;]*unsafe/);
+    assert.equal((await fetch(base + '/app', { redirect: 'manual' })).status, 308);
+    const js = await fetch(base + '/app/js/report.js');
+    assert.equal(js.status, 200); assert.match(js.headers.get('content-type'), /text\/javascript/);
+    const companion = await (await fetch(base + '/app-ai.mjs')).text();
+    assert.match(companion, /window\.IGBT_AI = Object\.freeze/);
+    assert.doesNotMatch(companion, /OPENAI_API_KEY|api\.openai\.com/);
+    for (const bad of ['/app/js/../../ai-explainer/server.mjs', '/app/js/UI.js', '/app/js/missing.js', '/app/selfcheck.html', '/app/dev/run-node.js'])
+      assert.equal((await fetch(base + bad)).status, 404, bad);
+  });
+});
+
+test('the app report path (/api/explain from the companion) keeps the same validation and single-call behaviour', async () => {
+  let calls = 0;
+  const p = prepareReport(reports.S8);
+  await withServer({ apiKey: 'TEST_ONLY', fetchImpl: async () => { calls++; return response(envelope(good(p))); } }, async base => {
+    const r = await post(base, p);
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.explanation.summary, good(p).summary);
+    assert.equal(calls, 1);
+  });
+});
