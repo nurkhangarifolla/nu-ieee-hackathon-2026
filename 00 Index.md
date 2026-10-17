@@ -62,6 +62,8 @@ Each project folder has a `Brief.md` (goal, audience, constraints, status) and a
 Hackathon/
 ├── 00 Index.md          ← you are here
 ├── CLAUDE.md            ← how Claude Code works in this vault (auto-loaded)
+├── CONTRIBUTING.md      ← rules for Said and the team: branches + PRs, what not to touch
+├── .github/             ← guard script + CI workflow (checks every PR and push to main)
 ├── DESIGN.md            ← app look and feel (NVIDIA style, adapted)
 ├── design/screenshots/  ← design-pass screenshots
 ├── Projects/            ← one folder per case: Brief.md + Decisions.md (Wabtec: + Tickets.md, Specs/)

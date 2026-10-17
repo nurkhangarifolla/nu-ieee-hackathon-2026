@@ -1,0 +1,9 @@
+# Same line endings on every OS (no CRLF churn from Windows editors)
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.pptx binary
+*.docx binary
+*.xlsx binary

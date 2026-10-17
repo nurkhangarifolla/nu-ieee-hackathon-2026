@@ -10,3 +10,24 @@ Originals/*.pptx
 graphify-out/
 # Packaged app zips (rebuilt from igbt-test-cell/)
 dist/
+# Obsidian per-user settings (each person keeps their own)
+.obsidian/plugins/
+.obsidian/themes/
+.obsidian/snippets/
+.obsidian/hotkeys.json
+.obsidian/graph.json
+.obsidian/bookmarks.json
+# Editors and AI tools: never shared through this repo (CONTRIBUTING.md §4).
+# A committed .claude/ or .mcp.json would change Nurkhan's Claude Code (settings, hooks, MCP servers).
+.vscode/
+.idea/
+.cursor/
+.claude/
+.mcp.json
+.cursorrules
+# Dependencies and local junk (the app has no build step)
+node_modules/
+.env
+*.log
+Thumbs.db
+desktop.ini

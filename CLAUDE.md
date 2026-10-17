@@ -13,6 +13,8 @@ The root folder is `/Users/nurhangarifolla/Hackathon /`. Its name ends with a **
 ```
 00 Index.md                          ← map of the vault; keep it current
 CLAUDE.md                            ← this file
+CONTRIBUTING.md                      ← rules for Said and the team (branches + PRs, protected paths)
+.github/guard.sh, workflows/guard.yml ← repo guard (CI on every PR and push to main)
 DESIGN.md                            ← app look and feel (NVIDIA style; project box at the top wins)
 design/screenshots/                  ← design-pass screenshots (not shipped)
 Projects/Wabtec – IGBT Test Cell/
@@ -37,6 +39,8 @@ Read the specs in this order: 04 (plan and priorities) → 02 (design) → 05 (d
 
 ## How to work
 1. **Pull first.** Start every session with `git pull` on `main` at the vault root, and pull again right before each push. Said (`saidstrong`) has write access and may push specs or proposal files. If a pull conflicts, merge it before anything else (in tables such as `Decisions.md`, keep both sides' rows). If a spec (02–05) changed, re-run `node igbt-test-cell/dev/selfcheck-node.js` before building and log any mismatch as "Pending Said".
+   - After each pull, run `git diff --stat ORIG_HEAD HEAD`. If someone else changed a protected path, the app code or the tool setup (list in `CONTRIBUTING.md` §3–4), run `bash .github/guard.sh ORIG_HEAD HEAD <their-login>` and tell Nurkhan before building.
+   - Said works on `said/<topic>` branches and opens pull requests (`CONTRIBUTING.md`). Review them with `gh pr list` / `gh pr diff <n>`, check out the branch, then run the guard and the selfcheck. Merge only after Nurkhan says OK. GitHub's **guard** workflow runs the same script on every pull request and every push to `main`.
 2. **One slice at a time.** Each slice is a ticket in `Tickets.md` (goal, steps, Done when). If the next ticket isn't written yet, write it first. Order: 01 skeleton/validation → 02 engine + S0 (M1) → 03 S1–S8 + HTML report (M2) → 04 Custom + AC-14 + AC-01 (M3).
 3. Build in `igbt-test-cell/`, styled per `DESIGN.md`. Commit each slice as `TICKET NN: summary` (one repo at the vault root; raw `.pptx` decks and `graphify-out/` are ignored). Push `main` to the private GitHub repo `nurkhangarifolla/nu-ieee-hackathon-2026` after each slice so the team sees the latest. Never make it public.
 4. **Check your own work before calling it done.** Test every Done-when line. The engine has no DOM, so run it with `node` (load `data.js` and `engine.js` with a `window` shim). Compare against the 03 §12 table and diff two runs for determinism (AC-02). Ask Nurkhan for browser screenshots and the second-laptop offline test (AC-01).
