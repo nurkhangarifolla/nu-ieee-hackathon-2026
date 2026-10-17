@@ -130,10 +130,10 @@ export function verificationContext(payload) {
   validateEvidence(payload);
   const status = payload.evidence.find(e => e.ref === VERIFY_REF)?.value || 'NOT_RUN';
   const meanings = {
-    VERIFIED: 'Simulated verification ran and reported VERIFIED. This describes a simulated step, not physical testing or an independently verified physical measurement.',
-    DISCHARGE_FAILED: 'Simulated verification ran and reported failed discharge (DISCHARGE_FAILED). Verification was available; it did not confirm a safe discharge. This is not a physical measurement.',
+    VERIFIED: 'The bench verification ran and reported VERIFIED. This is a recorded verification step, not physical testing or an independently verified physical measurement.',
+    DISCHARGE_FAILED: 'The bench verification ran and reported failed discharge (DISCHARGE_FAILED). Verification was available; it did not confirm a safe discharge. This is not a physical measurement.',
     VERIFICATION_UNAVAILABLE: 'Bus voltage is a model estimate; verification is unavailable. It is not an independently verified reading.',
-    NOT_RUN: 'No safe-state verification procedure ran in this report. All data remain synthetic.'
+    NOT_RUN: 'No safe-state verification procedure ran in this report.'
   };
   return { status, meaning: meanings[status] };
 }
@@ -193,12 +193,19 @@ export function failedChecks(payload) {
   return out;
 }
 
-// Mandatory refs: verdict, verification (when present), the stop trigger for an interruption, and the decisive
-// failed reading values (as many as fit within the evidence maximum).
+// The bench is the decisive finding only when verification did not succeed or the bench locked out. Otherwise the
+// report renders bench status from the recorded fields and the explanation stays on the module findings.
+export function benchIsDecisive(payload) {
+  const facts = new Map(payload.evidence.map(e => [e.ref, e.value]));
+  return facts.has(VERIFY_REF) && (facts.get(VERIFY_REF) !== 'VERIFIED' || facts.get('/deterministic/safe_state/final_state') === 'FAULT_LOCKED');
+}
+
+// Mandatory refs: verdict, verification (when the bench is decisive), the stop trigger for an interruption, and the
+// decisive failed reading values (as many as fit within the evidence maximum).
 export function requiredReferences(payload, maxItems = 4) {
   const facts = new Map(payload.evidence.map(e => [e.ref, e.value]));
   const refs = [VERDICT_REF];
-  if (facts.has(VERIFY_REF)) refs.push(VERIFY_REF);
+  if (benchIsDecisive(payload)) refs.push(VERIFY_REF);
   const stop = facts.get(ABORT_REF);
   if (stop && stop !== 'SAFE_STATE_NOT_VERIFIED') refs.push(ABORT_REF);
   if (facts.get(VERDICT_REF) === 'FAIL') for (const f of failedChecks(payload)) { if (refs.length >= maxItems) break; refs.push(f.valueRef); }

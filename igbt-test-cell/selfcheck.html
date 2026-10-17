@@ -422,6 +422,20 @@ window.IGBT.selfcheck = (function () {
     return { pass: ok, detail: "door " + ss.door + " · " + ss.final_state + " · " + d.overall.verdict + " (" + d.overall.abort_reason + ") · JSON and HTML build" };
   });
 
+  // Section B: the bench-status line comes from the recorded safe-state fields, not from generated text
+  add("Report B: bench status rendered from recorded fields beside generated text (S1, S8b)", function () {
+    var ai = { model: "MOCK", generated_local: "-", summary: "Generated summary.", items: [] }, bad = [];
+    var want = { S1: "Bench status (recorded, not generated): final state SAFE · discharge verified · bus 0.00 V at verification · enclosure door UNLOCKED.",
+      S8b: "Bench status (recorded, not generated): final state FAULT LOCKED · discharge not verified · verification meter unavailable; not measured · bus not measured (verification unavailable) · model estimate 40.94 V · enclosure door LOCKED." };
+    Object.keys(want).forEach(function (id) {
+      var html = REP.buildHtml(rep(id), { ai: ai }), none = REP.buildHtml(rep(id));
+      if (html.indexOf("<p class=\"bench\" data-bench=\"recorded\">" + htmlEsc(want[id]) + "</p>") < 0) bad.push(id + " line");
+      if (/simulat/i.test(want[id])) bad.push(id + " wording");
+      if (none.indexOf("data-bench") >= 0) bad.push(id + " shown without AI");
+    });
+    return { pass: !bad.length, detail: bad.length ? "missing: " + bad.join(", ") : "bench line from fields; absent when no AI text" };
+  });
+
   // ---- HTML report checks (05 §10; AC-06, AC-07, AC-08) ----
   function htmlEsc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function rowHtml(html, re) { var m = html.match(re); return m ? m[0] : null; }

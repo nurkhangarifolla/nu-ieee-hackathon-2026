@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { request } from 'node:http';
 import { prepareReport, validateEvidence, reviewSummary, VERDICT_REF, VERIFY_REF, REPORT_LIMIT, EVIDENCE_LIMIT, STANDARD_LIMITATIONS, verificationContext,
-  requiredReferences, failedChecks, describeRef, STAGE_NAMES, QUANTITY_LABELS, ABORT_REF } from '../evidence.mjs';
+  requiredReferences, failedChecks, describeRef, benchIsDecisive, STAGE_NAMES, QUANTITY_LABELS, ABORT_REF } from '../evidence.mjs';
 import { explain, requestBody, validateExplanation, OUTPUT_LIMITS } from '../openai.mjs';
 import { createExplainerServer } from '../server.mjs';
 
@@ -503,7 +503,9 @@ const rejects = (result, p, code) => assert.throws(() => validateExplanation(res
 
 test('S3 FAIL: the failed reading is supplied, mandatory, and named in the request', () => {
   assert.equal(q14.test_id, 'T09'); assert.equal(q14.quantity_id, 'Q14'); assert.equal(q14.value, 18); assert.equal(q14.limit, 10); assert.equal(q14.bound, 'maximum');
-  assert.deepEqual(requiredReferences(s3), [VERDICT_REF, VERIFY_REF, q14.valueRef]);
+  // Verification succeeded and the bench is SAFE: bench status is rendered from fields, so it is not a mandatory citation
+  assert.deepEqual(requiredReferences(s3), [VERDICT_REF, q14.valueRef]);
+  assert.equal(benchIsDecisive(s3), false);
   const body = requestBody(s3, 'gpt-4.1-mini');
   assert.match(body.instructions, /Decisive finding: T09 Out-of-saturation protection response, Protection response time = 18 µs against the configured maximum of 10 µs\./);
   assert.match(body.instructions, /never by JSON pointer/); assert.match(body.instructions, /Never claim that all safety conditions were met/);
@@ -525,6 +527,62 @@ test('S2 FAIL: decisive Q09 value and limit are required in the summary', () => 
   assert.equal(f.quantity_id, 'Q09'); assert.equal(f.limit, 3.2);
   assert.ok(requiredReferences(p).includes(f.valueRef));
   assert.deepEqual(validateExplanation(good(p), p), good(p));
+});
+
+// Regression fixture: the exact response returned for an S1 run (report RUN-20261018-0008, 18 Oct). Its failure
+// explanation is good; its bench commentary makes broad safety claims and uses "simulated".
+const s1 = prepareReport(JSON.parse(execFileSync(process.execPath, [runner, 'S1', '--report'], { encoding: 'utf8' })));
+const [q01, q02] = failedChecks(s1);
+const s1Returned = () => ({
+  summary: 'FAIL in T01 Terminal integrity and freewheeling-diode check due to Diode forward drop at 0 V below minimum 0.2 V; diode reverse direction reads open also failed. The safe state verification completed as VERIFIED with all safety devices confirmed and safe bus voltage at 0 V.',
+  supporting_evidence: [
+    { ref: VERDICT_REF, explanation: 'The overall test verdict is FAIL indicating failed module check(s).' },
+    { ref: VERIFY_REF, explanation: 'The safe state verification step ran and was VERIFIED, confirming simulated safety conditions were met at test end.' },
+    { ref: q01.valueRef, explanation: 'Diode forward drop measured 0 V, failing the minimum limit of 0.2 V, indicating a fault in terminal integrity or diode behavior.' },
+    { ref: q02.valueRef, explanation: 'Diode reverse direction does not read open (false), failing the expected boolean true condition for proper diode reverse isolation.' }
+  ]
+});
+
+test('S1 regression: returned bench commentary with broad safety claims is rejected, never shown', async () => {
+  const facts = values(s1);
+  assert.equal(facts.get(VERDICT_REF), 'FAIL'); assert.equal(facts.get(VERIFY_REF), 'VERIFIED');
+  assert.equal(facts.get('/deterministic/safe_state/door'), 'UNLOCKED'); assert.equal(facts.get('/deterministic/safe_state/v_bus_at_verification_v'), 0);
+  assert.deepEqual([q01.test_id, q01.quantity_id, q01.value, q01.limit, q01.bound], ['T01', 'Q01', 0, 0.2, 'minimum']);
+  assert.deepEqual([q02.test_id, q02.quantity_id, q02.value], ['T01', 'Q02', false]);
+  const result = s1Returned(), before = JSON.stringify(result);
+  let calls = 0;
+  await assert.rejects(explain(s1, { apiKey: 'TEST_ONLY', fetchImpl: async () => { calls++; return response(envelope(result)); } }), error => {
+    assert.equal(error.status, 502); assert.deepEqual(error.diagnostics.codes, ['UNSUPPORTED_SAFETY_CLAIM']);
+    assert.ok(!JSON.stringify(error.diagnostics).includes('safety devices')); return true;
+  });
+  assert.equal(calls, 1); assert.equal(JSON.stringify(result), before);
+  // Each bench claim is rejected on its own
+  let r = s1Returned(); r.supporting_evidence.splice(1, 1); rejects(r, s1, 'UNSUPPORTED_SAFETY_CLAIM');
+  r = s1Returned(); r.summary = r.summary.replace(/ The safe state[^.]*\./, ''); rejects(r, s1, 'UNSUPPORTED_SAFETY_CLAIM');
+  r = s1Returned(); r.summary = r.summary.replace(/ The safe state[^.]*\./, '');
+  r.supporting_evidence[1].explanation = 'The safe state verification step ran and was VERIFIED at test end with simulated values.'; rejects(r, s1, 'SIMULATION_WORDING');
+});
+
+test('S1: the same failure explanation without bench commentary is accepted; bench status is not mandatory', () => {
+  assert.equal(benchIsDecisive(s1), false);
+  assert.deepEqual(requiredReferences(s1), [VERDICT_REF, q01.valueRef, q02.valueRef]);
+  const body = requestBody(s1, 'gpt-4.1-mini');
+  assert.match(body.instructions, /Bench status \(verification, enclosure door, bus voltage\) is printed by the application from the recorded fields; do not describe/);
+  assert.match(body.instructions, /never use the words simulation, simulated or simulator/);
+  assert.doesNotMatch(body.instructions, /\bsimulated\s+(?:verification|step)/i);
+  const r = s1Returned(); r.summary = r.summary.replace(/ The safe state[^.]*\./, ''); r.supporting_evidence.splice(1, 1);
+  assert.deepEqual(validateExplanation(r, s1), r);
+  // Citing the verification field stays allowed when it states only the recorded value
+  const v = s1Returned(); v.summary = r.summary; v.supporting_evidence[1].explanation = 'Safe-state verification is recorded as VERIFIED.';
+  assert.deepEqual(validateExplanation(v, s1), v);
+});
+
+test('bench fault outcomes still require the verification citation and explanation', () => {
+  for (const id of ['S8', 'S8b']) {
+    const p = prepareReport(reports[id]);
+    assert.equal(benchIsDecisive(p), true); assert.ok(requiredReferences(p).includes(VERIFY_REF));
+    assert.match(requestBody(p, 'gpt-4.1-mini').instructions, /Bench status is decisive here/);
+  }
 });
 
 test('S4 interruption: the stop trigger is mandatory and must be named', () => {
