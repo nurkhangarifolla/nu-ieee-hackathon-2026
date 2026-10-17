@@ -1,4 +1,4 @@
-import { prepareReport, reviewSummary, REPORT_LIMIT } from '/evidence.mjs';
+import { prepareReport, reviewSummary, REPORT_LIMIT, STANDARD_LIMITATIONS } from '/evidence.mjs';
 
 const $ = id => document.getElementById(id);
 let reviewed = null, busy = false, selection = 0;
@@ -8,6 +8,7 @@ $('report').addEventListener('change', async () => {
   reviewed = null;
   $('explain').disabled = true; $('review').hidden = true; $('result').hidden = true;
   $('payload').textContent = '';
+  $('limitations').replaceChildren();
   const file = $('report').files[0];
   if (!file) { say('No report selected. Nothing has been sent.'); return; }
   say('Reading locally. Nothing has been sent.');
@@ -22,6 +23,9 @@ $('report').addEventListener('change', async () => {
     $('review-summary').textContent = `Existing outcome: ${summary.verdict}. ${summary.facts} synthetic evidence fields (${summary.bytes} bytes) will be sent. Verification: ${summary.verification}. Identifiers and free-text descriptions are excluded.`;
     $('verification-note').textContent = summary.voltage_context;
     $('payload').textContent = JSON.stringify(payload, null, 2);
+    for (const limitation of STANDARD_LIMITATIONS) {
+      const li = document.createElement('li'); li.textContent = limitation; $('limitations').appendChild(li);
+    }
     $('review').hidden = false; $('explain').disabled = busy;
     say('Review ready. Nothing sent to OpenAI. Click Explain result to send this evidence once.');
   } catch (error) { if (current === selection) say(error.message || 'Could not read the report.'); }
@@ -52,10 +56,6 @@ $('explain').addEventListener('click', async () => {
       const li = document.createElement('li');
       li.textContent = `${item.ref} = ${JSON.stringify(facts.get(item.ref))} — ${item.explanation}`;
       $('evidence').appendChild(li);
-    }
-    $('limitations').replaceChildren();
-    for (const limitation of body.explanation.limitations) {
-      const li = document.createElement('li'); li.textContent = limitation; $('limitations').appendChild(li);
     }
     $('result').hidden = false;
     say('Explanation received. The original report and verdict have not changed.');

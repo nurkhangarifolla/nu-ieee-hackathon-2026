@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { request } from 'node:http';
-import { prepareReport, validateEvidence, reviewSummary, VERDICT_REF, VERIFY_REF, REPORT_LIMIT, EVIDENCE_LIMIT } from '../evidence.mjs';
+import { prepareReport, validateEvidence, reviewSummary, VERDICT_REF, VERIFY_REF, REPORT_LIMIT, EVIDENCE_LIMIT, STANDARD_LIMITATIONS, verificationContext } from '../evidence.mjs';
 import { explain, requestBody, validateExplanation, OUTPUT_LIMITS } from '../openai.mjs';
 import { createExplainerServer } from '../server.mjs';
 
@@ -19,7 +19,7 @@ function good(p = payload) {
   return {
     summary: `Existing outcome ${facts.get(VERDICT_REF)}. ${unavailable ? 'Bus voltage is a model estimate; verification is unavailable and the voltage is not independently verified.' : 'The verification state describes synthetic data only.'}`,
     supporting_evidence: [VERDICT_REF, ...(facts.has(VERIFY_REF) ? [VERIFY_REF] : [])].map(ref => ({ ref, explanation: `Reported value: ${facts.get(ref)}.` })),
-    limitations: ['Synthetic data and unapproved rules; no physical hardware validation. Explanation only, not an acceptance or safety decision.']
+    limitations: [...STANDARD_LIMITATIONS]
   };
 }
 const envelope = result => ({ status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: JSON.stringify(result) }] }] });
@@ -74,8 +74,9 @@ test('Responses request has strict source refs, bounds and no report instruction
   const schema = body.text.format.schema.properties;
   assert.equal(schema.supporting_evidence.minItems, 2);
   assert.equal(schema.supporting_evidence.maxItems, OUTPUT_LIMITS.evidence);
-  assert.equal(schema.limitations.minItems, 1);
+  assert.equal(schema.limitations.minItems, STANDARD_LIMITATIONS.length);
   assert.equal(schema.limitations.maxItems, OUTPUT_LIMITS.limitations);
+  assert.deepEqual(schema.limitations.items.enum, STANDARD_LIMITATIONS);
   for (const [field, limit] of [[schema.summary, OUTPUT_LIMITS.summary],
     [schema.supporting_evidence.items.properties.explanation, OUTPUT_LIMITS.explanation],
     [schema.limitations.items, OUTPUT_LIMITS.limitation]]) {
@@ -104,7 +105,9 @@ const validationCases = [
   ['LIMITATIONS_NOT_ARRAY', r => { r.limitations = 'PRIVATE_RESPONSE_TEXT'; }],
   ['LIMITATIONS_COUNT', r => { r.limitations = Array(OUTPUT_LIMITS.limitations + 1).fill('Synthetic only.'); }],
   ['LIMITATIONS_COUNT', r => { r.limitations = []; }],
-  ['LIMITATION_TEXT_INVALID', r => { r.limitations = ['x'.repeat(OUTPUT_LIMITS.limitation + 1)]; }],
+  ['LIMITATION_TEXT_INVALID', r => { r.limitations[0] = 'x'.repeat(OUTPUT_LIMITS.limitation + 1); }],
+  ['LIMITATION_NOT_STANDARD', r => { r.limitations[0] = 'PRIVATE_RESPONSE_TEXT'; }],
+  ['LIMITATION_DUPLICATE', r => { r.limitations[1] = r.limitations[0]; }],
   ['EVIDENCE_ITEM_SHAPE', r => { r.supporting_evidence[0].extra = 'PRIVATE_RESPONSE_TEXT'; }],
   ['CITATION_UNKNOWN', r => { r.supporting_evidence[0].ref = '/PRIVATE_NOT_A_SOURCE'; }],
   ['EVIDENCE_TEXT_INVALID', r => { r.supporting_evidence[0].explanation = 'x'.repeat(OUTPUT_LIMITS.explanation + 1); }],
@@ -150,6 +153,48 @@ test('verification citation is conditional only when the procedure did not run',
   const p = prepareReport(reports.S5), result = good(p);
   assert.equal(requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.supporting_evidence.minItems, 1);
   assert.equal(result.supporting_evidence.length, 1); assert.deepEqual(validateExplanation(result, p), result);
+});
+
+test('S8 regression: quoted incorrect limitation is rejected, never repaired or displayed as AI', async () => {
+  const p = prepareReport(reports.S8), result = good(p);
+  const incorrect = 'Physical durations and events are simulated and verification is unavailable.';
+  result.limitations[0] = incorrect;
+  const before = JSON.stringify(result);
+  assert.ok(!requestBody(p, 'gpt-4.1-mini').text.format.schema.properties.limitations.items.enum.includes(incorrect));
+  let calls = 0;
+  await assert.rejects(explain(p, { apiKey: 'TEST_ONLY', fetchImpl: async () => { calls++; return response(envelope(result)); } }), error => {
+    assert.deepEqual(error.diagnostics.codes, ['LIMITATION_NOT_STANDARD']);
+    assert.ok(!JSON.stringify(error.diagnostics).includes(incorrect)); return true;
+  });
+  assert.equal(calls, 1); assert.equal(JSON.stringify(result), before);
+});
+
+for (const [id, expected] of [['S0', 'VERIFIED'], ['S8', 'DISCHARGE_FAILED'], ['S8b', 'VERIFICATION_UNAVAILABLE'], ['S5', 'NOT_RUN']]) {
+  test(`${id}: explicit status context and fixed limitations are separate from generated explanation`, async () => {
+    const p = prepareReport(reports[id]), context = verificationContext(p), body = requestBody(p, 'gpt-4.1-mini');
+    assert.equal(context.status, expected);
+    assert.ok(body.instructions.includes(`Actual verification status: ${expected}.`));
+    assert.ok(body.instructions.includes(`Status-specific context: ${context.meaning}`));
+    assert.ok(body.instructions.includes('limitations array is fixed application disclosure text, NOT generated analysis'));
+    assert.ok(STANDARD_LIMITATIONS.every(text => !/verification/i.test(text)));
+    assert.equal(reviewSummary(p).voltage_context, context.meaning);
+    if (id === 'S8') { assert.match(context.meaning, /verification ran and reported failed discharge/); assert.ok(!/unavailable/i.test(context.meaning)); }
+    if (id === 'S8b') assert.match(context.meaning, /model estimate.*verification is unavailable.*not an independently verified/);
+    assert.deepEqual(await explain(p, { apiKey: 'TEST_ONLY', fetchImpl: async () => response(envelope(good(p))) }), good(p));
+  });
+}
+
+for (const [id, field, claim] of [
+  ['S8', 'summary', 'ABORTED. Physical durations and events are simulated and verification is unavailable.'],
+  ['S8', 'evidence', 'The verification is unavailable.'],
+  ['S0', 'summary', 'PASS. VERIFICATION_UNAVAILABLE.'],
+  ['S8b', 'evidence', 'Simulated verification ran and reported failed discharge.']
+]) test(`${id}: contradictory status claim in ${field} is rejected`, () => {
+  const p = prepareReport(reports[id]), result = good(p);
+  if (field === 'summary') result.summary = claim; else result.supporting_evidence[1].explanation = claim;
+  assert.throws(() => validateExplanation(result, p), error => {
+    assert.deepEqual(error.diagnostics.codes, ['VERIFICATION_STATUS_CONTRADICTION']); return true;
+  });
 });
 
 test('one successful mocked call; returned citation and unavailable context validation', async () => {
@@ -307,12 +352,13 @@ test('page selection stays local; one click sends only reviewed evidence; output
     addEventListener(name, fn) { this.handlers[name] = fn; }, replaceChildren() { this.children = []; }, appendChild(child) { this.children.push(child); } });
   const doc = { getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element };
   let calls = 0, finish;
-  const ctx = { document: doc, prepareReport, reviewSummary, REPORT_LIMIT, AbortSignal,
+  const ctx = { document: doc, prepareReport, reviewSummary, REPORT_LIMIT, STANDARD_LIMITATIONS, AbortSignal,
     fetch: async (_, init) => { calls++; assert.deepEqual(JSON.parse(init.body), payload); return new Promise(resolve => { finish = () => resolve(response({ model: 'MOCK-TEST-ONLY', explanation: good() })); }); } };
   vm.createContext(ctx); vm.runInContext(source.replace(/^import[^\n]+\n/, ''), ctx);
   const $ = id => doc.getElementById(id), file = JSON.stringify(reports.S8b);
   $('report').files = [{ size: file.length, text: async () => file }];
   await $('report').handlers.change(); assert.equal(calls, 0); assert.equal($('explain').disabled, false);
+  assert.deepEqual($('limitations').children.map(li => li.textContent), [...STANDARD_LIMITATIONS]);
   assert.match($('verification-note').textContent, /model estimate/);
   const first = $('explain').handlers.click(); await $('explain').handlers.click(); assert.equal(calls, 1);
   finish(); await first; assert.equal($('result').hidden, false);
@@ -330,4 +376,8 @@ test('page selection stays local; one click sends only reviewed evidence; output
   assert.match($('status').textContent, /CITATION_DUPLICATE/);
   assert.match($('status').textContent, /evidence_items/);
   assert.equal($('result').hidden, true); assert.equal(calls, 2);
+  assert.deepEqual($('limitations').children.map(li => li.textContent), [...STANDARD_LIMITATIONS]);
+  const markup = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  assert.match(markup, /Standard limitations — fixed application text/);
+  assert.ok(markup.indexOf('id="limitations"') < markup.indexOf('id="result"'));
 });

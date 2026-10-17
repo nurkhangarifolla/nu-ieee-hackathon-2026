@@ -1,4 +1,4 @@
-import { validateEvidence, VERDICT_REF, VERIFY_REF } from './evidence.mjs';
+import { validateEvidence, VERDICT_REF, VERIFY_REF, STANDARD_LIMITATIONS, verificationContext } from './evidence.mjs';
 
 export class ExplainerError extends Error {
   constructor(status, message, diagnostics) { super(message); this.status = status; if (diagnostics) this.diagnostics = diagnostics; }
@@ -7,6 +7,7 @@ export const OUTPUT_LIMITS = Object.freeze({ summary: 800, evidence: 6, explanat
 const DIAGNOSTIC_CODES = new Set([
   'OUTPUT_OBJECT_SHAPE', 'SUMMARY_TEXT_INVALID', 'EVIDENCE_NOT_ARRAY', 'EVIDENCE_COUNT',
   'LIMITATIONS_NOT_ARRAY', 'LIMITATIONS_COUNT', 'LIMITATION_TEXT_INVALID', 'EVIDENCE_ITEM_SHAPE',
+  'LIMITATION_NOT_STANDARD', 'LIMITATION_DUPLICATE', 'VERIFICATION_STATUS_CONTRADICTION',
   'CITATION_UNKNOWN', 'EVIDENCE_TEXT_INVALID', 'CITATION_DUPLICATE', 'VERDICT_REFERENCE_MISSING',
   'VERIFICATION_REFERENCE_MISSING', 'VERDICT_TEXT_MISSING', 'UNAVAILABLE_MODEL_ESTIMATE_MISSING',
   'UNAVAILABLE_VERIFICATION_WORDING_MISSING', 'UNAVAILABLE_NOT_VERIFIED_MISSING',
@@ -37,20 +38,25 @@ State the existing overall verdict verbatim in summary, distinguishing module re
 Select only the most useful supporting evidence, NOT every supplied field. Cite each ref at most ONCE;
 all refs must exactly match supplied refs. Include the mandatory refs specified below, each once, with no duplicates.
 Explain only each field's actual value; do not invent source fields or numeric claims not in evidence.
-Use 1-${OUTPUT_LIMITS.evidence} evidence items (at least the mandatory-ref count), and 1-${OUTPUT_LIMITS.limitations} limitations.
+Use 1-${OUTPUT_LIMITS.evidence} evidence items (at least the mandatory-ref count), and exactly ${STANDARD_LIMITATIONS.length} standard limitations.
 Summary: 1-2 short sentences, at most ${OUTPUT_LIMITS.summary} characters. Each evidence explanation: one short sentence,
 at most ${OUTPUT_LIMITS.explanation} characters. Each limitation: one short sentence, at most ${OUTPUT_LIMITS.limitation} characters.
 All strings must contain non-whitespace text. Stay concise enough to finish within the output-token budget.
-Limitations must mention synthetic data, unapproved rules, no physical hardware validation and that this is
-an explanation, not an acceptance/safety decision. Physical duration is estimated, not measured.`;
+The limitations array is fixed application disclosure text, NOT generated analysis: copy each allowed schema
+enum string exactly once. Never add report-specific verification claims to limitations. Explain the actual
+verification status only in summary/supporting evidence; do not discuss alternative verification statuses.
+DISCHARGE_FAILED means simulated verification RAN and reported failed discharge; it is NOT unavailable.
+VERIFICATION_UNAVAILABLE means the verification could not be performed and the retained voltage is a model estimate.
+Do not confuse missing physical validation (true for every synthetic report) with unavailable simulated verification.`;
 
 export function requestBody(payload, model) {
   validateEvidence(payload);
   const mandatory = requiredReferences(payload);
   const verdict = payload.evidence.find(e => e.ref === VERDICT_REF).value;
+  const verification = verificationContext(payload);
   return {
     model, store: false, max_output_tokens: 1400,
-    instructions: `${INSTRUCTIONS}\nMandatory supporting_evidence refs (each exactly once): ${mandatory.join(', ')}.\nThe summary must contain the exact case-sensitive verdict text "${verdict}".`,
+    instructions: `${INSTRUCTIONS}\nMandatory supporting_evidence refs (each exactly once): ${mandatory.join(', ')}.\nThe summary must contain the exact case-sensitive verdict text "${verdict}".\nActual verification status: ${verification.status}.\nStatus-specific context: ${verification.meaning}`,
     input: [{ role: 'user', content: [{ type: 'input_text', text: JSON.stringify(payload) }] }],
     text: { format: { type: 'json_schema', name: 'report_explanation', strict: true, schema: {
       type: 'object', additionalProperties: false, required: ['summary', 'supporting_evidence', 'limitations'],
@@ -63,8 +69,9 @@ export function requestBody(payload, model) {
             ref: { type: 'string', enum: payload.evidence.map(e => e.ref) },
             explanation: conciseText(OUTPUT_LIMITS.explanation, 'One nonblank short sentence explaining this actual field, not new measurements.')
           } } },
-        limitations: { type: 'array', minItems: 1, maxItems: OUTPUT_LIMITS.limitations,
-          items: conciseText(OUTPUT_LIMITS.limitation, 'One nonblank short limitation; synthetic data, unapproved rules, no hardware validation or acceptance/safety decision.') }
+        limitations: { type: 'array', minItems: STANDARD_LIMITATIONS.length, maxItems: OUTPUT_LIMITS.limitations,
+          description: 'Fixed application disclosures, not generated report-specific claims. Copy every allowed string exactly once.',
+          items: { ...conciseText(OUTPUT_LIMITS.limitation, 'Copy one fixed standard limitation verbatim.'), enum: STANDARD_LIMITATIONS } }
       }
     } } }
   };
@@ -82,9 +89,13 @@ export function validateExplanation(result, payload) {
   if (!Array.isArray(result.supporting_evidence)) rejectResponse('EVIDENCE_NOT_ARRAY', counts);
   if (result.supporting_evidence.length < requiredReferences(payload).length || result.supporting_evidence.length > OUTPUT_LIMITS.evidence) rejectResponse('EVIDENCE_COUNT', counts);
   if (!Array.isArray(result.limitations)) rejectResponse('LIMITATIONS_NOT_ARRAY', counts);
-  if (result.limitations.length < 1 || result.limitations.length > OUTPUT_LIMITS.limitations) rejectResponse('LIMITATIONS_COUNT', counts);
+  if (result.limitations.length !== STANDARD_LIMITATIONS.length) rejectResponse('LIMITATIONS_COUNT', counts);
+  const seenLimitations = new Set();
   for (const limitation of result.limitations) {
     if (!text(limitation, OUTPUT_LIMITS.limitation)) rejectResponse('LIMITATION_TEXT_INVALID', { ...counts, ...(typeof limitation === 'string' ? { item_chars: limitation.length } : {}) });
+    if (!STANDARD_LIMITATIONS.includes(limitation)) rejectResponse('LIMITATION_NOT_STANDARD', counts);
+    if (seenLimitations.has(limitation)) rejectResponse('LIMITATION_DUPLICATE', counts);
+    seenLimitations.add(limitation);
   }
   const facts = new Map(payload.evidence.map(e => [e.ref, e.value]));
   const citations = new Set();
@@ -98,6 +109,12 @@ export function validateExplanation(result, payload) {
   if (!citations.has(VERDICT_REF)) rejectResponse('VERDICT_REFERENCE_MISSING', counts);
   if (facts.has(VERIFY_REF) && !citations.has(VERIFY_REF)) rejectResponse('VERIFICATION_REFERENCE_MISSING', counts);
   if (!result.summary.includes(facts.get(VERDICT_REF))) rejectResponse('VERDICT_TEXT_MISSING', counts);
+  const generated = [result.summary, ...result.supporting_evidence.map(item => item.explanation)].join(' ');
+  const verification = facts.get(VERIFY_REF);
+  if (verification !== 'VERIFICATION_UNAVAILABLE' &&
+      /\bVERIFICATION_UNAVAILABLE\b|\bverification\s+(?:(?:is|was|remains)\s+)?unavailable\b/i.test(generated)) rejectResponse('VERIFICATION_STATUS_CONTRADICTION', counts);
+  if (verification === 'VERIFICATION_UNAVAILABLE' &&
+      /\bDISCHARGE_FAILED\b|\bfailed discharge\b|\bdischarge\s+(?:(?:has|had)\s+)?failed\b/i.test(generated)) rejectResponse('VERIFICATION_STATUS_CONTRADICTION', counts);
   if (facts.get(VERIFY_REF) === 'VERIFICATION_UNAVAILABLE') {
     const prose = [result.summary, ...result.limitations].join(' ');
     if (!/model estimate/i.test(prose)) rejectResponse('UNAVAILABLE_MODEL_ESTIMATE_MISSING', counts);

@@ -3,6 +3,13 @@ export const REPORT_LIMIT = 512 * 1024;
 export const EVIDENCE_LIMIT = 32 * 1024;
 export const VERDICT_REF = '/deterministic/overall/verdict';
 export const VERIFY_REF = '/deterministic/safe_state/verification';
+// Fixed application disclosures, never generated report-specific claims or fallback AI content.
+export const STANDARD_LIMITATIONS = Object.freeze([
+  'All readings and events are synthetic; no physical module, measurement chain or industrial safety system was validated.',
+  'Rules are illustrative and NOT APPROVED; this explanation is not an acceptance, certification or safety decision.',
+  'Physical durations are engineering estimates, not measured test-cycle times.',
+  'Generated commentary can be wrong; check cited evidence against the original report.'
+]);
 const quantityStages = {
   Q01: 'T01', Q02: 'T01', Q03: 'T02', Q03b: 'T02', Q04: 'T02',
   Q05: 'T03', Q06: 'T03', Q07: 'T03', Q08: 'T04', Q09: 'T05',
@@ -119,14 +126,24 @@ export function prepareReport(report) {
   return validateEvidence({ evidence });
 }
 
-export function reviewSummary(payload) {
+export function verificationContext(payload) {
   validateEvidence(payload);
+  const status = payload.evidence.find(e => e.ref === VERIFY_REF)?.value || 'NOT_RUN';
+  const meanings = {
+    VERIFIED: 'Simulated verification ran and reported VERIFIED. This describes a simulated step, not physical testing or an independently verified physical measurement.',
+    DISCHARGE_FAILED: 'Simulated verification ran and reported failed discharge (DISCHARGE_FAILED). Verification was available; it did not confirm a safe discharge. This is not a physical measurement.',
+    VERIFICATION_UNAVAILABLE: 'Bus voltage is a model estimate; verification is unavailable. It is not an independently verified reading.',
+    NOT_RUN: 'No safe-state verification procedure ran in this report. All data remain synthetic.'
+  };
+  return { status, meaning: meanings[status] };
+}
+
+export function reviewSummary(payload) {
+  const context = verificationContext(payload);
   const values = new Map(payload.evidence.map(e => [e.ref, e.value]));
   const verification = values.get(VERIFY_REF) || 'Procedure not run';
   return {
     verdict: values.get(VERDICT_REF), verification, facts: payload.evidence.length, bytes: size(payload),
-    voltage_context: verification === 'VERIFICATION_UNAVAILABLE'
-      ? 'Bus voltage is a model estimate; verification is unavailable. It is not an independently verified reading.'
-      : 'All readings are synthetic. VERIFIED describes only the simulated verification step, not a physical measurement.'
+    voltage_context: context.meaning
   };
 }
