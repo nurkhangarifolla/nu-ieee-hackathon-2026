@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IGBT Test Cell — Virtual Prototype (SIMULATION)</title>
+<style>
+  :root { --ink:#1b1f24; --muted:#5b6470; --line:#d5dae0; --bg:#f6f7f9; --card:#fff;
+          --sim:#7a4b00; --simbg:#ffd666; --bad:#a1121b; --badbg:#fde7e9; --info:#0b4f8a; --infobg:#e3f0fb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+  #sim-banner { position:sticky; top:0; z-index:10; background:var(--simbg); color:var(--sim); font-weight:700;
+                text-align:center; padding:8px 12px; border-bottom:2px solid var(--sim); letter-spacing:.02em; }
+  header { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 20px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0 auto 0 0; }
+  .badge { font-size:12px; font-weight:700; padding:4px 8px; border-radius:4px; border:1px solid; }
+  .badge-demo { color:var(--info); background:var(--infobg); }
+  .badge-prod { color:var(--bad); background:var(--badbg); }
+  button { font:inherit; padding:7px 14px; border-radius:5px; border:1px solid #9aa3ad; background:#fff; cursor:pointer; }
+  button.primary { background:#1d4f91; border-color:#1d4f91; color:#fff; font-weight:600; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .link { border:none; background:none; color:#1d4f91; text-decoration:underline; padding:0; }
+  main { max-width:980px; margin:0 auto; padding:20px; }
+  section.screen { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:20px 24px; }
+  h2 { margin:0 0 4px; font-size:20px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns: 170px 1fr; gap:10px 14px; align-items:center; margin:16px 0; }
+  .grid label { font-weight:600; }
+  input[type=text], select { font:inherit; padding:5px 8px; border:1px solid #aab2bb; border-radius:4px; max-width:100%; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; text-transform:uppercase; color:var(--muted); }
+  .verdict { display:inline-block; font-weight:800; font-size:18px; padding:6px 12px; border:2px solid; border-radius:6px; }
+  .verdict-ne { color:#4a4a4a; background:#ececec; }
+  .alert { border:2px solid var(--bad); background:var(--badbg); color:var(--bad); padding:10px 14px; border-radius:6px; font-weight:600; }
+  .chip { display:inline-block; font-size:12px; font-weight:700; padding:1px 6px; border:1px solid #888; border-radius:3px; background:#f2f2f2; }
+  .actions { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+  .fixed { font-style:italic; color:var(--muted); }
+  #limitations { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:20; display:flex; align-items:center; justify-content:center; padding:16px; }
+  #limitations[hidden] { display:none; }
+  #limitations .box { background:#fff; max-width:720px; max-height:90vh; overflow:auto; border-radius:8px; padding:20px 24px; }
+  [hidden] { display:none !important; }
+  @media (max-width:640px) { .grid { grid-template-columns:1fr; } main { padding:12px; } }
+</style>
+</head>
+<body>
+<div id="sim-banner" role="status"></div>
+<header>
+  <h1>Virtual IGBT test cell — operator workflow prototype</h1>
+  <span id="profile-badge" class="badge"></span>
+  <button type="button" id="open-limitations" class="link">Limitations</button>
+</header>
+
+<main id="app">
+  <!-- Screen 1: Setup -->
+  <section id="screen-setup" class="screen" hidden>
+    <h2>1 · Setup</h2>
+    <div class="muted">Run ID <strong id="run-id"></strong></div>
+    <div class="grid">
+      <label for="in-module-id">Module ID</label><input type="text" id="in-module-id" size="28">
+      <label for="in-profile">Profile</label>
+      <div><select id="in-profile"></select> <span id="profile-forced" class="muted" hidden>(set by the scenario)</span></div>
+      <label for="in-scenario">Scenario</label>
+      <div><select id="in-scenario"></select><div id="scenario-overrides" class="muted"></div></div>
+      <label for="in-seed">Seed</label><input type="text" id="in-seed" size="12">
+      <label for="in-speed">Speed</label><select id="in-speed"></select>
+      <label for="in-operator">Operator</label><input type="text" id="in-operator" size="28" placeholder="name or initials">
+    </div>
+
+    <div id="custom-panel" hidden>
+      <h3>Custom module parameters</h3>
+      <p class="muted">Fictional module; values are illustrative. Values are checked by the configuration preflight.</p>
+      <table>
+        <thead><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Note</th></tr></thead>
+        <tbody id="custom-body"></tbody>
+      </table>
+      <button type="button" id="btn-reset-custom">Reset to defaults</button>
+    </div>
+
+    <div class="actions"><button type="button" class="primary" id="btn-continue">CONTINUE</button></div>
+  </section>
+
+  <!-- Screen 1a: Validation error -->
+  <section id="screen-invalid" class="screen" hidden>
+    <h2>1a · Validation error</h2>
+    <div class="muted" id="invalid-run"></div>
+    <p class="alert" id="invalid-count"></p>
+    <table>
+      <thead><tr><th>Field</th><th>Value</th><th>Rule</th></tr></thead>
+      <tbody id="invalid-body"></tbody>
+    </table>
+    <div class="actions">
+      <button type="button" class="btn-back">Back to setup</button>
+      <button type="button" class="primary" disabled>START</button>
+    </div>
+  </section>
+
+  <!-- Screen 1b: Configuration blocked -->
+  <section id="screen-blocked" class="screen" hidden>
+    <h2>1b · Configuration blocked</h2>
+    <div class="muted" id="blocked-run"></div>
+    <p class="alert" id="blocked-text"></p>
+    <p>Overall: <span class="verdict verdict-ne">NOT EVALUATED</span></p>
+    <p id="blocked-label"></p>
+    <p class="muted" id="blocked-reason"></p>
+    <div class="actions">
+      <button type="button" class="btn-back">Back to setup</button>
+      <button type="button" disabled title="Report export arrives in a later ticket">Export report (next ticket)</button>
+    </div>
+  </section>
+
+  <!-- Placeholder: preflight OK -->
+  <section id="screen-ok" class="screen" hidden>
+    <h2>Configuration preflight passed</h2>
+    <div class="muted" id="ok-run"></div>
+    <p>Pre-check: next ticket</p>
+    <div class="actions"><button type="button" class="btn-back">Back to setup</button></div>
+  </section>
+</main>
+
+<div id="limitations" hidden role="dialog" aria-label="Limitations">
+  <div class="box">
+    <h2>Limitations</h2>
+    <p id="limitations-text"></p>
+    <h3>Chip legend</h3>
+    <ul id="chip-legend"></ul>
+    <button type="button" id="close-limitations">Close</button>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/validate.js"></script>
+<script src="js/rng.js"></script>
+<script src="js/models.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/sequencer.js"></script>
+<script src="js/report.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
