@@ -503,6 +503,7 @@ window.IGBT.ui = (function () {
   function showResult() {
     var rep = state.report, det = rep.deterministic, o = det.overall;
     $("result-meta").textContent = runMeta(state.setup, det.inputs);
+    $("result-inputs").textContent = "Overrides: " + REP.text.overridesText(det.inputs);
     var v = $("result-verdict");
     v.textContent = o.verdict; v.className = VERDICT_CLASS[o.verdict] || "verdict verdict-ne";
     $("result-label").textContent = o.verdict_label;

@@ -1,8 +1,8 @@
 /* dev/selfcheck-node.js: run the selfcheck.html checks in node (same scripts, same check code:
    the <script id="checks"> block is read out of selfcheck.html) and print the total plus the
-   AC-11 actual-vs-expected table (03 §12) in Markdown. Not loaded by index.html; leave dev/ out
+   AC-11 actual-vs-expected table (03 §12) and the AC-14 validation messages in Markdown. Not loaded by index.html; leave dev/ out
    of the zip.
-   Usage: node dev/selfcheck-node.js            (all cases + AC-11 table; exit 1 on any FAIL)
+   Usage: node dev/selfcheck-node.js            (all cases + AC-11 and AC-14 tables; exit 1 on any FAIL)
           node dev/selfcheck-node.js --table    (AC-11 table only) */
 "use strict";
 var fs = require("fs"), path = require("path"), vm = require("vm");
@@ -34,5 +34,12 @@ out.push("AC-11: 03 §12 actual vs expected (σ = 0, default bench)", "",
 ctx.IGBT.selfcheck.s12Table().forEach(function (r) {
   out.push("| " + [r.scenario, r.column, cell(r.expected), cell(r.actual), r.pass ? "yes" : "**NO**"].join(" | ") + " |");
 });
+if (!tableOnly) {
+  out.push("", "AC-14: validation messages (configPreflight → INVALID, no run, no verdict)", "",
+    "| Case | Status | Field | Value | Rule |", "| --- | --- | --- | --- | --- |");
+  ctx.IGBT.selfcheck.ac14Table().forEach(function (r) {
+    out.push("| " + [r.name, r.status, "`" + r.field + "`", "`" + r.value + "`", cell(r.rule)].join(" | ") + " |");
+  });
+}
 process.stdout.write(out.join("\n") + "\n");
 if (!tableOnly && passed !== results.length) process.exit(1);

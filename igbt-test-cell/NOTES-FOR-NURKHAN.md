@@ -6,6 +6,16 @@
 - **TICKETS 02–03 in your own browser (3 min).** I tested `file://` in headless Chrome with the network off (screenshots in `../design/screenshots/t02-*` and `t03-*`). The app's built-in browser pane can't run it: the folder name ends in a space, so the pane shows a static copy without scripts. Please double-click `index.html` once with Wi-Fi off: run S0 and press Abort during T08a; then run S8 → VIEW RESULT → VIEW REPORT → Print / Save PDF and check every PDF page has the yellow banner and the black footer. Check the console is clean.
 - **Abort and then a failed discharge (TICKET 02, Pending Said).** If a run is aborted *and* the safe state is then not verified, `abort_reason` keeps the trigger (e.g. `OPERATOR`) and the label is the "safe state not verified; enclosure kept locked" one. 05 §7 allows one reason only. Only reachable by aborting S8 by hand.
 
+- **AC-01 on a second laptop (TICKET 04, M3 18:30, about 10 min).** Copy `dist/igbt-test-cell-v0.4.0.zip` to another laptop (USB or cloud). SHA-256 `c2fe96b57579f060bfcd58aaf500d11dcc15eac71890bacadcb9a9fcfad39d05`. Then:
+  1. Turn Wi-Fi off. Unzip anywhere and double-click `igbt-test-cell/index.html` (Chrome or Edge).
+  2. Check the yellow banner and `v0.4.0` in the footer.
+  3. Run S0 at 16×: CONTINUE → START → VIEW RESULT (overall PASS, 499.85 s). Download JSON.
+  4. VIEW REPORT → Download HTML → Print / Save PDF. Check the yellow banner and black footer on every PDF page.
+  5. Open `selfcheck.html`: it should say `Total: 198 / 198 PASS`.
+  6. Press F12 → Console: no red errors.
+  7. Record a screen clip, plus the laptop model, OS and browser with version (03 §13 asks for these). Tell me, and I'll log it.
+  Repeat on the presentation laptop on 18 Oct 08:00 (04 §3).
+
 ## Decisions I made
 - **Scenario overrides shape.** Every scenario carries `overrides: { module, bench }`, `events: []` and `force_profile: null` even when empty, so the engine reads one shape. CUSTOM has `custom: true`; its overrides come from the Setup table.
 - **Custom table sends only changed values** as module overrides. Text that isn't a number goes through as text so the validation screen shows it (e.g. `abc`). An empty `desat_trip_us` means `null` (never trips).
@@ -52,3 +62,11 @@
 - **T10 timing.** If `verify_delay_s` is longer than the 20 s closing DWELL, T10 gets an extra COMPUTED component "verification wait beyond the closing DWELL", so T10's components, RUN_END and `physical_total_s` agree (509.85 s at 30 s).
 - **Version 0.3.1** (metadata and footer only), so this package can be told apart from the TICKET 03 build.
 - All three are logged as Pending Said in `Decisions.md`.
+
+### TICKET 04 (Custom flip, AC-14 messages, AC-15, v0.4.0 package)
+- **Custom already worked** (TICKET 01 table, TICKET 02 engine). This slice adds proof: 24 new checks (198 in total). Custom r_ce_mohm 7 → 12 flips T05 to FAIL with the reason, equation, margin and hypothesis updated. Custom r_ce 12 and S2 give byte-identical stages, overall, safe state, events and total, so nothing keys on the scenario ID.
+- **Result screen shows "Overrides:"** (inputs that differ from the data-file defaults). It uses the same helper as the HTML report's Overrides row, so the AC-03 before/after screenshots show what changed. Layout only; no rule or value touched.
+- **AC-14 end to end.** All eight cases (ten checks; both `v_safe_v` = and > `v_dc_test_v`, and both window min = and > max) now go through `configPreflight` → INVALID with no run. Bench cases go in as Custom bench overrides (05 §2.2, same validation). Rule cases are a temporary edit of the in-memory data file, restored afterwards. `node dev/selfcheck-node.js` prints the messages table.
+- **AC-15 added here.** It's P0 and no ticket covered it. Setting `i_pulse_a` 300 A and `v_dc_test_v` 700 V in the in-memory data file updates conditions, equations and values. Q09 = 3.10 V, Q16 = 128.57 µs, Q13 = 880 V, t_charge 7 s, v0 700 V, t_safe 26.39 s, E 245 J, total 501.39 s, and no "200 A" or "600 V" is left in the JSON or HTML. The expected numbers are worked out by hand from 02 §8. Checks only; no app change.
+- **Version 0.4.0** (metadata and footer only). Every deterministic section (S0–S5, S8) is byte-identical to v0.3.1, and the HTML reports differ only in the version string.
+- **AC-01 proxy** on this Mac: unzipped v0.4.0 into a folder with a space in its name, then ran headless Chrome 155 offline over `file://`. Custom 7/12 and S0 went Setup → Report, with JSON + HTML downloads and a 9-page PDF. selfcheck showed 198/198, with no console errors and no network requests. This doesn't replace the second-laptop run (see "Needs your decision").

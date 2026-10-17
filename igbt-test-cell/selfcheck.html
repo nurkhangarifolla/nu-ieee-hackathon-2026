@@ -577,6 +577,150 @@ window.IGBT.selfcheck = (function () {
     });
   });
 
+  // ---- TICKET 04: Custom flip (AC-03), AC-14 end to end, AC-15 ----
+  function stageOf(d, id) { return d.stages.filter(function (s) { return s.test_id === id; })[0]; }
+  function others(d, skipStage) { return d.stages.filter(function (s) { return s.test_id !== skipStage; }); }
+  var c7 = null, c12 = null;
+  function custom7() { if (!c7) c7 = customRun({ r_ce_mohm: 7 }); return c7; }
+  function custom12() { if (!c12) c12 = customRun({ r_ce_mohm: 12 }); return c12; }
+
+  add("AC-03 Custom r_ce_mohm = 7 → T05 DONE PASS: Q09 2.40 V ≤ max 3.20 V; overall PASS", function () {
+    var d = custom7().d, st = stageOf(d, "T05"), q = readingIn(d, "Q09");
+    var ok = d.inputs.scenario_id === "CUSTOM" && d.inputs.module_parameters.r_ce_mohm === 7 && st.status === "DONE" && outcome(st) === "PASS" &&
+      q.value === 2.4 && q.verdict === "PASS" && q.margin === 0.8 &&
+      q.reason === "V_CE(sat) at pulse current 2.40 V ≤ max 3.20 V [ILLUSTRATIVE · INVENTED, NOT APPROVED]" &&
+      q.model_equation === "V_CE(sat) = 1.00 V + 0.007 Ω × 200 A = 2.40 V" && d.overall.verdict === "PASS";
+    return { pass: ok, detail: "T05 " + outcome(st) + " · " + q.reason + " · " + q.model_equation + " · overall " + d.overall.verdict };
+  });
+  add("AC-03 Custom r_ce_mohm = 12 → T05 FAIL: Q09 3.40 V > max 3.20 V, margin −0.20 V; reason, equation and hypothesis updated", function () {
+    var d = custom12().d, st = stageOf(d, "T05"), q = readingIn(d, "Q09");
+    var hyp = d.hypotheses.filter(function (h) { return h.source === "T05"; })[0];
+    var ok = d.inputs.module_parameters.r_ce_mohm === 12 && st.status === "DONE" && outcome(st) === "FAIL" &&
+      q.value === 3.4 && q.verdict === "FAIL" && q.margin === -0.2 &&
+      q.reason === "V_CE(sat) at pulse current 3.40 V > max 3.20 V [ILLUSTRATIVE · INVENTED, NOT APPROVED]" &&
+      q.model_equation === "V_CE(sat) = 1.00 V + 0.012 Ω × 200 A = 3.40 V" &&
+      !!hyp && hyp.text.indexOf("consistent with increased conduction resistance") >= 0 && T().marginText(q) === "−0.20 V";
+    return { pass: ok, detail: "T05 " + outcome(st) + " · " + q.reason + " · margin " + T().marginText(q) + " · " + q.model_equation + " · " + (hyp ? hyp.text : "no hypothesis") };
+  });
+  add("AC-03 Custom r_ce_mohm = 12 → overall FAIL with the 05 §8 label; every other stage unchanged", function () {
+    var a = custom7().d, b = custom12().d, o = b.overall;
+    var same = JSON.stringify(others(a, "T05")) === JSON.stringify(others(b, "T05")) &&
+      JSON.stringify(a.safe_state) === JSON.stringify(b.safe_state) && a.physical_total_s === b.physical_total_s;
+    var ok = o.verdict === "FAIL" && o.verdict_label === D.verdict_labels.FAIL && o.is_acceptance_decision === false && same;
+    return { pass: ok, detail: o.verdict + " · " + o.verdict_label + " · other stages, safe state and total " + (same ? "identical" : "DIFFER") };
+  });
+  add("AC-03 Custom r_ce_mohm = 12 and S2 give the same stages, overall, safe state, events and total (only the scenario ID differs)", function () {
+    var a = custom12().d, b = rep("S2").deterministic;
+    function core(d) { return JSON.stringify([d.stages, d.overall, d.safe_state, d.events, d.hypotheses, d.physical_total_s, d.inputs.module_parameters, d.inputs.bench_conditions]); }
+    var ok = core(a) === core(b) && a.inputs.scenario_id === "CUSTOM" && b.inputs.scenario_id === "S2";
+    return { pass: ok, detail: (core(a) === core(b) ? "identical" : "DIFFER") + " · scenario_id " + a.inputs.scenario_id + " vs " + b.inputs.scenario_id };
+  });
+  add("AC-03 Custom r_ce_mohm = 12: Result and HTML report list the changed input (module.r_ce_mohm = 12)", function () {
+    var x = custom12(), t = T().overridesText(x.d.inputs), html = REP.buildHtml(x.report);
+    var ok = t === "module.r_ce_mohm = 12" && html.indexOf(htmlEsc(t)) >= 0 && T().overridesText(custom7().d.inputs) === "none (defaults)";
+    return { pass: ok, detail: "12 → \"" + t + "\" (in HTML: " + (html.indexOf(htmlEsc(t)) >= 0) + ") · 7 → \"" + T().overridesText(custom7().d.inputs) + "\"" };
+  });
+  add("AC-02 Custom r_ce_mohm = 12 two runs give byte-identical deterministic sections", function () {
+    var a = JSON.stringify(customRun({ r_ce_mohm: 12 }).d), b = JSON.stringify(customRun({ r_ce_mohm: 12 }).d);
+    return { pass: a === b, detail: a === b ? "identical (" + a.length + " characters)" : "differ" };
+  });
+
+  // AC-14: every case through configPreflight → INVALID with field, value and rule; no run, no verdict.
+  // Module and override-key cases go through the Custom table's path; bench cases as Custom bench
+  // overrides (05 §2.2: same validation); rule cases as a temporary edit of the in-memory data file.
+  function customSetup(mod, bench) { return { scenario_id: "CUSTOM", custom_overrides: { module: mod || {}, bench: bench || {} } }; }
+  var AC14 = [
+    ["r_ce_mohm = −1 (Custom table)", customSetup({ r_ce_mohm: -1 }), null, "module.r_ce_mohm"],
+    ["dclink_c_mf = 0 (bench override)", customSetup({}, { dclink_c_mf: 0 }), null, "bench.dclink_c_mf"],
+    ["v_safe_v = v_dc_test_v = 600 V (bench override)", customSetup({}, { v_safe_v: 600 }), null, "bench.v_safe_v"],
+    ["v_safe_v = 700 V > v_dc_test_v (bench override)", customSetup({}, { v_safe_v: 700 }), null, "bench.v_safe_v"],
+    ["speed = 0 (setup)", { speed: 0 }, null, "setup.speed"],
+    ["window min ≥ max: Q01 0.8–0.8 (data file)", {}, function (p) { rule(p, "Q01").min = 0.8; }, "profile.demo.rules.Q01.min"],
+    ["window min > max: Q06 16–14 (data file)", {}, function (p) { rule(p, "Q06").min = 16; rule(p, "Q06").max = 14; }, "profile.demo.rules.Q06.min"],
+    ["info rule with a limit: Q16 max 200 (data file)", {}, function (p) { rule(p, "Q16").max = 200; }, "profile.demo.rules.Q16.max"],
+    ["demo rule missing a limit: Q09 max null (data file)", {}, function (p) { rule(p, "Q09").max = null; }, "profile.demo.rules.Q09.max"],
+    ["unknown override key: module.foo (Custom)", customSetup({ foo: 1 }), null, "module.foo"]
+  ];
+  function ac14Run(c) {
+    var prof = V.findProfile("demo"), saved = prof.rules, res;
+    try {
+      if (c[2]) { prof.rules = clone(saved); c[2](prof); }
+      res = V.configPreflight(setup(c[1]));
+    } finally { prof.rules = saved; }
+    var hits = res.status === "INVALID" ? res.errors.filter(function (e) { return e.field === c[3]; }) : [];
+    return { res: res, hits: hits };
+  }
+  AC14.forEach(function (c) {
+    add("AC-14 end to end: " + c[0] + " → INVALID (no run, no verdict) with field, value and rule", function () {
+      var x = ac14Run(c), ok = x.res.status === "INVALID" && x.hits.length > 0 && !x.res.inputs && !x.res.rules;
+      return { pass: ok, detail: "status " + x.res.status + (x.hits.length ? " · " + fmt(x.hits) : x.res.errors ? " · other errors: " + fmt(x.res.errors) : "") };
+    });
+  });
+  add("AC-14 the data file is restored after the temporary edits (S0 preflight OK)", function () {
+    var r = V.configPreflight(setup());
+    return { pass: r.status === "OK", detail: "status " + r.status };
+  });
+  function ac14Table() {
+    return AC14.map(function (c) {
+      var x = ac14Run(c), e = x.hits[0];
+      return { name: c[0], status: x.res.status, field: e ? e.field : "(none)", value: e ? JSON.stringify(e.value) : "", rule: e ? e.rule : "(not rejected)" };
+    });
+  }
+
+  // AC-15: change i_pulse_a and v_dc_test_v in the (in-memory) data file; conditions text,
+  // equations and computed values follow. Expected numbers are hand-computed from 02 §8.
+  var ac15 = null;
+  function ac15Run() {
+    if (ac15) return ac15;
+    var b = V.findProfile("demo").bench_conditions, saved = clone(b);
+    try {
+      b.i_pulse_a = 300; b.v_dc_test_v = 700;
+      var r = reportFor("S0");
+      ac15 = { report: r, d: r.deterministic, html: REP.buildHtml(r) };
+    } finally { Object.keys(saved).forEach(function (k) { b[k] = saved[k]; }); }
+    return ac15;
+  }
+  function rd(d, q) { return readingIn(d, q); }
+  add("AC-15 i_pulse_a 300 A, v_dc_test_v 700 V: conditions text follows (T05, T07, T08a)", function () {
+    var d = ac15Run().d, t5 = stageOf(d, "T05").conditions, t7 = stageOf(d, "T07").conditions, t8 = stageOf(d, "T08a").conditions;
+    var ok = t5.indexOf("I = 300 A pulse") >= 0 && t7.indexOf("V_CE = 700 V") >= 0 && t8.indexOf("V_bus = 700 V, I = 300 A") >= 0;
+    return { pass: ok, detail: t5 + " | " + t7 + " | " + t8 };
+  });
+  add("AC-15 Q09 = 1.00 V + 0.007 Ω × 300 A = 3.10 V (PASS)", function () {
+    var q = rd(ac15Run().d, "Q09");
+    return { pass: q.value === 3.1 && q.verdict === "PASS" && q.model_equation === "V_CE(sat) = 1.00 V + 0.007 Ω × 300 A = 3.10 V", detail: q.value + " " + q.verdict + " · " + q.model_equation };
+  });
+  add("AC-15 Q16 t1 = 300 µH × 300 A / 700 V = 128.57 µs; Q13 = 700 V + 100 nH × 1800 A/µs = 880 V", function () {
+    var a = rd(ac15Run().d, "Q16"), b = rd(ac15Run().d, "Q13");
+    var ok = Math.abs(a.value - 90000 / 700) < 1e-9 && a.model_equation.indexOf("300 µH × 300 A / 700 V") >= 0 &&
+      b.value === 880 && b.model_equation === "V_peak = 700 V + 100 nH × 1800 A/µs = 880 V" && b.verdict === "PASS";
+    return { pass: ok, detail: a.value + " · " + a.model_equation + " | " + b.value + " " + b.verdict + " · " + b.model_equation };
+  });
+  add("AC-15 T07 t_charge = 1 mF × 700 V / 0.1 A = 7.00 s (COMPUTED 7 + DWELL 23); bus charges to 700.0 V", function () {
+    var d = ac15Run().d, st = stageOf(d, "T07"), ch = ev(d, "BUS_CHARGE_START")[0];
+    var comps = st.physical_components.map(function (c) { return c.basis + " " + c.seconds; }).join(" + ");
+    var ok = st.model_equation === "t_charge = C·V/I = 1 mF × 700 V / 0.1 A = 7.00 s" && comps === "COMPUTED 7 + DWELL 23" && ch.detail.indexOf("charging to 700.0 V") >= 0;
+    return { pass: ok, detail: st.model_equation + " · " + comps + " · " + ch.detail };
+  });
+  add("AC-15 safe state: v0 700 V, t_safe = 10 kΩ × 1 mF × ln(700/50) = 26.39 s, E = 245 J; total 501.39 s", function () {
+    var d = ac15Run().d, ss = d.safe_state, eqT10 = stageOf(d, "T10").model_equation;
+    var ok = ss.v_bus_at_start_v === 700 && ss.discharge_time_s === 26.39 && ss.final_state === "SAFE" &&
+      eqT10.indexOf("ln(700.0 V / 50 V) = 26.39 s") >= 0 && eqT10.indexOf("= 245 J") >= 0 && d.physical_total_s === 501.39;
+    return { pass: ok, detail: "v0 " + ss.v_bus_at_start_v + " · discharge " + ss.discharge_time_s + " s · " + eqT10 + " · total " + d.physical_total_s };
+  });
+  var OLD_I = /(^|[^\d.])200 A(?![\w\/])/, OLD_V = /(^|[^\d.])600(\.0+)? V(?!\w)/;
+  add("AC-15 no '200 A' or '600 V' left in the JSON or HTML report (S0 at defaults has both)", function () {
+    var x = ac15Run(), j = JSON.stringify(x.report), base = JSON.stringify(rep("S0"));
+    var left = [OLD_I.test(j), OLD_V.test(j), OLD_I.test(x.html), OLD_V.test(x.html)];
+    var ok = left.every(function (b) { return !b; }) && OLD_I.test(base) && OLD_V.test(base);
+    return { pass: ok, detail: "JSON 200 A / 600 V: " + left[0] + " / " + left[1] + " · HTML: " + left[2] + " / " + left[3] + " · defaults S0 has both: " + (OLD_I.test(base) && OLD_V.test(base)) };
+  });
+  add("AC-15 the data file is restored afterwards (S0 deterministic section unchanged)", function () {
+    ac15Run();
+    var a = JSON.stringify(reportFor("S0").deterministic), b = JSON.stringify(det());
+    return { pass: a === b && V.findProfile("demo").bench_conditions.v_dc_test_v === 600, detail: a === b ? "identical" : "differ" };
+  });
+
   function run() {
     return cases.map(function (c, i) {
       var r;
@@ -584,7 +728,7 @@ window.IGBT.selfcheck = (function () {
       return { n: i + 1, name: c.name, result: r.pass ? "PASS" : "FAIL", detail: r.detail };
     });
   }
-  return { run: run, s12Table: s12Table };
+  return { run: run, s12Table: s12Table, ac14Table: ac14Table };
 })();
 
 if (typeof document !== "undefined" && document.getElementById("rows")) {

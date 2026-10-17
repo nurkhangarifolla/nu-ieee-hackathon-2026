@@ -18,7 +18,7 @@ Hackathon at Nazarbayev University, 17 Oct 2026. Three rail companies each set o
 | – | [[Projects/Stadler – Steel vs Aluminium/Brief\|Steel vs Aluminium carbodies]] | Stadler Kazakhstan | Life-cycle energy cost of a light aluminium train vs a heavier steel one, then apply it to Kazakhstan | Not chosen |
 | – | [[Projects/Alstom – TF1-PP Transformer/Brief\|TF1-PP Transformer failures]] | Alstom | Find the root cause of repeated voltage-transformer failures on KZ8A locomotives | Not chosen |
 
-Each project folder has a `Brief.md` (goal, audience, constraints, status) and a `Decisions.md` (decision log table). Wabtec also has `Tickets.md` (builder tickets; TICKETS 03 and 03b are done, TICKET 04 next) and `Specs/` (Said's build specs).
+Each project folder has a `Brief.md` (goal, audience, constraints, status) and a `Decisions.md` (decision log table). Wabtec also has `Tickets.md` (builder tickets; TICKETS 01–04 are done; AC-01 on a second laptop and the 20:00 freeze next) and `Specs/` (Said's build specs).
 
 - Stadler: [[Projects/Stadler – Steel vs Aluminium/Brief|Brief]] · [[Projects/Stadler – Steel vs Aluminium/Decisions|Decisions]]
 - Wabtec: [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[Projects/Wabtec – IGBT Test Cell/Decisions|Decisions]] · [[Projects/Wabtec – IGBT Test Cell/Tickets|Tickets]]
@@ -44,6 +44,7 @@ Each project folder has a `Brief.md` (goal, audience, constraints, status) and a
 | 2026-10-17 | [[Sessions/2026-10-17 TICKET 02 engine and S0]] |
 | 2026-10-17 | [[Sessions/2026-10-17 TICKET 03 S1–S8 and HTML report]] |
 | 2026-10-17 | [[Sessions/2026-10-17 TICKET 03b review fixes]] |
+| 2026-10-17 | [[Sessions/2026-10-17 TICKET 04 Custom, AC-14, AC-01 package]] |
 
 ## Sources (summaries, 300 words or fewer)
 

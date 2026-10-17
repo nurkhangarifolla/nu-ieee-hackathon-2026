@@ -191,7 +191,8 @@ window.IGBT.report = (function () {
   function statusText(s) { return String(s).replace(/_/g, " "); }
   function animationOf(physical, speed) { return E.r2(physical / speed); }
   var text = { numText: numText, unitOf: unitOf, valueText: valueText, ruleText: ruleText, marginText: marginText,
-               chipTexts: chipTexts, secText: secText, statusText: statusText, animationOf: animationOf };
+               chipTexts: chipTexts, secText: secText, statusText: statusText, animationOf: animationOf,
+               overridesText: overridesText };
 
   // ---- HTML report (05 §10): one self-contained page; inline CSS, no script, no external URL ----
   function esc(s) {

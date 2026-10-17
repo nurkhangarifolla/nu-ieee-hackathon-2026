@@ -17,7 +17,7 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Done** (S0 matches 03 §12; AC-02 diff empty; AC-12 in headless Chrome over `file://`, offline; selfcheck 59/59; Nurkhan's own-browser check still to do) |
 | 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report + Report screen | M2 17:30 | **Done** (every §12 cell matches, AC-11 table; selfcheck 133/133 in node and headless Chrome; AC-02 diffs empty; PDFs carry banner and footer on every page; Nurkhan's own-browser check still to do) |
 | 03b | Independent-review fixes: judge at full precision, complete rule sets, T10 timing with a long verify delay | M2 17:30 | **Done** (v0.3.1; all three probes fixed; selfcheck 174/174 in node and headless Chrome from the unzipped package; AC-11 unchanged; three Pending Said entries) |
-| 04 | Custom (AC-03), AC-14 set, AC-01 on a second laptop | M3 18:30 | Not written |
+| 04 | Custom (AC-03), AC-14 messages, AC-15, AC-01 package + checklist | M3 18:30 | **Done** (v0.4.0; selfcheck 198/198 in node and headless Chrome from the unzipped zip; AC-03 screenshots; AC-14 messages table; AC-15 checks; AC-11 unchanged; AC-01 on a second laptop still to do by Nurkhan) |
 
 ## Builder standing brief
 
@@ -293,4 +293,56 @@ Done when:
   matches every cell; AC-02 diffs empty; both greps empty.
 - Packaged zip (no dev/) rebuilt and handed over with the results.
 Commit "TICKET 03b: review fixes (full-precision verdicts, complete rule sets, T10 timing)".
+```
+
+## TICKET 04
+
+Run this in Claude Code from `/Users/nurhangarifolla/Hackathon /`. The app lives in `igbt-test-cell/`.
+
+```
+TICKET 04: Custom flip (AC-03), AC-14 messages, AC-15, AC-01 package (M3, 18:30)
+
+Context: Fourth slice (04 §3 M3). Custom mode and the AC-14 validators exist since TICKET 01;
+this slice proves them end to end and builds the package for AC-01. AC-15 is P0 and no ticket
+covered it yet, so it is added here (checks only, no app change).
+Specs: 03 §13 AC-01, AC-03, AC-14, AC-15; 02 §3, §11 (Screen 1 Custom); 05 §2–§2.3, §4 (CUSTOM).
+Look and feel: DESIGN.md.
+
+Hard rules
+- Everything from TICKETS 01–03b still holds (classic <script src>, offline, values verbatim,
+  no spec edits, no scenario ID in engine.js / models.js / sequencer.js).
+- No threshold, value, expected outcome or fixed text changes. If a check disagrees with the
+  specs, stop and log it in Decisions.md as "Pending Said".
+
+1. selfcheck.html, AC-03: Custom with defaults (r_ce_mohm 7) → T05 DONE PASS, Q09 2.40 V,
+   equation "… 0.007 Ω × 200 A = 2.40 V", overall PASS. Custom with r_ce_mohm 12 → T05 FAIL,
+   Q09 3.40 V, margin −0.20 V, reason "… 3.40 V > max 3.20 V [ILLUSTRATIVE · INVENTED, NOT
+   APPROVED]", equation "… 0.012 Ω × 200 A = 3.40 V", T05 hypothesis, overall FAIL with the
+   05 §8 label; every other stage unchanged. Custom r_ce 12 and S2 give the same stages,
+   overall, safe state, events and total (only scenario_id / name differ: no verdict keyed on
+   the scenario).
+2. selfcheck.html, AC-14: each of the eight cases goes through configPreflight → INVALID (no run,
+   no verdict) with field, value and rule. Bench cases via Custom bench overrides; rule cases
+   via a temporary edit of the in-memory demo profile. Expose ac14Table().
+3. selfcheck.html, AC-15: change i_pulse_a (200 → 300) and v_dc_test_v (600 → 700) in the
+   in-memory data file; S0's conditions text, equations and computed values (Q09, Q16, Q13,
+   t_charge, v0, t_safe) follow; no "200 A" or "600 V" left in that report.
+4. dev/selfcheck-node.js: also print the AC-14 messages table (Markdown).
+5. ui.js: Result shows the inputs that differ from the defaults (same helper as the HTML report),
+   so the AC-03 before/after screenshots show what changed.
+6. Version 0.4.0. Package dist/igbt-test-cell-v0.4.0.zip (no dev/). AC-01 proxy on this Mac:
+   unzip to a new folder, headless Chrome offline over file://: S0 Setup → Report, JSON + HTML
+   download, PDF, selfcheck count, no console errors, no network requests. AC-03 before/after
+   screenshots in design/screenshots/t04-*.
+7. NOTES-FOR-NURKHAN.md: AC-01 checklist for the second laptop (what to run, what to record:
+   laptop, OS, browser).
+
+Done when:
+- node dev/selfcheck-node.js: all cases PASS (give the count); AC-11 table unchanged; AC-14
+  table lists all eight cases with their messages.
+- AC-03: before/after screenshots of the Result screen in headless Chrome (Custom 7 → 12).
+- AC-01 proxy passes from the unzipped v0.4.0 package; selfcheck.html gives the same count as node.
+- AC-02 diffs empty for S0–S5, S8 and Custom r_ce 12; both greps from TICKET 02 empty.
+- The real AC-01 (second laptop, Wi-Fi off) is Nurkhan's; checklist handed over.
+Commit "TICKET 04: Custom flip, AC-14 messages, AC-15, v0.4.0 package".
 ```

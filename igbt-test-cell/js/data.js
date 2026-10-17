@@ -313,7 +313,7 @@ window.APP_DATA = (function () {
 
   return {
     schema_version: "0.3",
-    software_version: "0.3.1",
+    software_version: "0.4.0",
     case_references: case_references,
     module_defaults: module_defaults,
     module_parameter_units: module_parameter_units,
