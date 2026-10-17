@@ -39,7 +39,11 @@ $('explain').addEventListener('click', async () => {
       signal: AbortSignal.timeout(40000)
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error || 'Explanation request failed. No automatic retry.');
+    if (!response.ok) {
+      // Server diagnostics contain constant reason codes and numeric counts only; never raw AI/report text.
+      const diagnostic = body.diagnostics ? ` Diagnostics: ${JSON.stringify(body.diagnostics)}` : '';
+      throw new Error((body.error || 'Explanation request failed. No automatic retry.') + diagnostic);
+    }
     $('ai-summary').textContent = body.explanation.summary;
     $('model').textContent = `Live OpenAI response · model ${body.model}`;
     const facts = new Map(snapshot.evidence.map(e => [e.ref, e.value]));

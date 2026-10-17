@@ -65,7 +65,8 @@ export function createExplainerServer(options = {}) {
       reply(res, 200, { model, explanation: result });
     } catch (error) {
       reply(res, error instanceof ExplainerError ? error.status : 500,
-        { error: error instanceof ExplainerError ? error.message : 'Local explainer failed. No automatic retry.' });
+        { error: error instanceof ExplainerError ? error.message : 'Local explainer failed. No automatic retry.',
+          ...(error instanceof ExplainerError && error.diagnostics ? { diagnostics: error.diagnostics } : {}) });
     } finally { busy = false; }
   });
   server.requestTimeout = 10000;

@@ -22,7 +22,8 @@ if (!process.env.OPENAI_API_KEY?.trim()) {
     await explain(payload, { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || 'gpt-4.1-mini' });
     console.log('LIVE CHECK PASS: one real structured response; valid source citations and unavailable-verification distinction.');
   } catch (error) {
-    console.error(`LIVE CHECK FAIL: ${error.status ? error.message : 'Local report or configuration error.'}`);
+    const diagnostic = error.diagnostics ? ` Diagnostics: ${JSON.stringify(error.diagnostics)}` : '';
+    console.error(`LIVE CHECK FAIL: ${error.status ? error.message : 'Local report or configuration error.'}${diagnostic}`);
     process.exitCode = 1;
   }
 }
