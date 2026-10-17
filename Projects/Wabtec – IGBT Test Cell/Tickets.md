@@ -13,7 +13,10 @@ Back to [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[00 Index]] · Sp
 | --- | --- | --- | --- |
 | BRIEF | Builder standing brief | – | Superseded by `CLAUDE.md` (Claude Code does everything) |
 | 01 | Offline skeleton, all data, validation + config preflight | Skeleton (+1 h) | **Done** (commit c874602; selfcheck 28/28; AC-01 on a second laptop still to do) |
-| 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | Next (ticket not written yet) |
+| 01b | Design pass: `DESIGN.md` (NVIDIA style) applied to banner, header, Setup, 1a, 1b | – | **Done** (selfcheck 28/28; screenshots in `design/screenshots/`) |
+| 02 | Engine, sequencer, safe-state, S0 end-to-end + JSON | M1 15:30 | **Written, ready to build** |
+| 03 | S1, S2, S3, S4, S5, S8 match 03 §12 + HTML report | M2 17:30 | Not written |
+| 04 | Custom (AC-03), AC-14 set, AC-01 on a second laptop | M3 18:30 | Not written |
 
 ## Builder standing brief
 
@@ -82,3 +85,113 @@ Done when:
 - selfcheck.html shows all cases PASS (give the count).
 - grep -rnE 'fetch\(|type="module"|https?://' igbt-test-cell returns nothing.
 Commit "TICKET 01: skeleton, data, validation, preflight". Report in the standing format, with the selfcheck output pasted.
+
+## TICKET 02
+
+Run this in Claude Code from `/Users/nurhangarifolla/Hackathon /`. Since 17 Oct the git repo is the vault root; the app lives in `igbt-test-cell/`.
+
+```
+TICKET 02: Engine, sequencer, safe-state procedure, S0 end to end + JSON export (M1, 15:30)
+
+Context: Second slice (04 §3 M1). Readings computed from parameters, rule engine with chips,
+prerequisites, explicit bus model, the single safe-state procedure, Pre-check / Run / Result
+screens and JSON export. σ = 0 only. HTML report and the S1–S8 checks are TICKET 03; Custom
+flip (AC-03) is TICKET 04.
+Specs: 02 §4–§9, §11; 03 §5–§10, §12 (S0 row); 05 §5–§8, §11. Look and feel: DESIGN.md (vault root).
+App: "/Users/nurhangarifolla/Hackathon /igbt-test-cell/".
+
+Hard rules
+- Everything from TICKET 01 still holds (classic <script src>, offline, values verbatim, no spec edits).
+- engine.js, models.js and sequencer.js contain no scenario ID (S0–S10, CUSTOM), not even in
+  comments. Scenario effects arrive only as overrides and scenario_events from configPreflight.
+- σ = 0: rng.js returns x unchanged and never consults the PRNG (02 §10).
+- If S0 does not match 03 §12, stop and log it in Decisions.md as "Pending Said". Never change a
+  value, limit or expected outcome to make it match.
+
+1. data.js: add, verbatim from the specs:
+   - stages in the 02 §6 order (T00, T01, T02, T03, T06, T04, T05, T07, T08a, T08b, T09, T10),
+     each with name (03 §1 "Test" column) and class (02 §6).
+   - physical_components per stage (03 §7: basis, seconds, note). The COMPUTED parts of T07
+     and T10 are filled in by the engine.
+   - conditions templates (03 §6), hypotheses (03 §10, incl. "Safe state not verified"),
+     interlocks IL1–IL7 with their demo control (02 §5).
+2. models.js (pure): the 02 §8 micro-models (V_CE(sat), t1, V_peak, t_charge, t_safe, E) and a
+   model_equation string built from the actual values, e.g.
+   "V_CE(sat) = 1.00 V + 0.007 Ω × 200 A = 2.40 V". Never hard-code 600 V or 200 A.
+3. engine.js (pure, no DOM):
+   - Readings per 03 §6, incl. the dependency rule (driver_idle_w < 1.0 → gate readings 0 V;
+     gate_turns_off_ok = false → gate stays at gate_on_v after OFF).
+   - evaluateRule per 03 §8: verdict PASS / FAIL / INFO / NOT RUN; reason templates with chips
+     "ILLUSTRATIVE · <basis>, NOT APPROVED" (+ "Case ref REF-xx"); margin = signed distance to the
+     nearest numeric limit, positive inside, null when value or limit is missing;
+     reference_text from case_references.
+   - Stage PASS = every required reading PASS. Prerequisites per 03 §5: BLOCKED with a reason
+     naming the failed stages; T06 NOT_APPLICABLE when gate_accessible = false; T08b always
+     NOT_MODELLED and out of the roll-up.
+   - Roll-up per 03 §9, in that order, with precedence_reason and verdict_label (05 §8).
+     is_acceptance_decision is always false. Hypotheses per 03 §10, kept separate from verdicts.
+   - Number hygiene: round stored reading values to 4 dp, and stored seconds and volts to 2 dp,
+     before judging and serialising (removes float noise like 2.4000000000000004; keeps N3's
+     11.000 mΩ exactly on the 3.2 V limit). Log this in NOTES under "Decisions I made".
+4. sequencer.js (pure state machine on a physical clock; no DOM, no timers):
+   - States per 02 §4. All interlocks OK to START. IL3 shows OK at Pre-check and is not tied to
+     bench_selfcheck_ok (S10 must end INCOMPLETE, not ABORTED, 03 §12). Log in NOTES.
+   - Explicit bench state 02 §7.1 (v_bus_v, source_enabled, contactor_closed, door_locked,
+     gate_cmd, gate_meas_v). Bus: linear ramp from T07 start, hold through T09, exponential decay
+     only inside the safe-state procedure; v_bus_v stays 0 V before T07.
+   - advance(dt_physical) moves the run; abort(cause) with OPERATOR, IL1_OPEN…IL7_OPEN or
+     WATCHDOG; scenario_events fire at {at_stage, at_progress}. On abort the running stage becomes
+     INTERRUPTED (its elapsed fraction counts), later stages NOT_RUN (NOT_APPLICABLE and
+     NOT_MODELLED keep their status).
+   - One safe-state procedure, SS1–SS9 (02 §7.2), entered on completion or abort, exactly once
+     per run. Triggers during it are logged as WARNING and ignored. Verification at
+     t_safe + verify_delay_s after DISCHARGE_START (or at discharge_timeout_s on failure), also at
+     0 V. Verified → DOOR_UNLOCKED → SAFE; otherwise FAULT_LOCKED (door stays locked; a logged
+     "Reset simulation" is the only exit). T10's stage record is this procedure's record.
+   - Events per 05 §5: seq, stage, type, physical_time_s (cumulative from RUN_START),
+     animation_time_s = physical / speed, detail.
+   - runToEnd() for node and selfcheck uses the same code path as the UI.
+5. report.js: buildJson(run) in the 05 §6 shape: metadata; deterministic {inputs, overall, stages
+   with readings and physical components, safe_state, events without animation_time_s,
+   physical_total_s}; presentation; case_references used in this run; limitations text. Also the
+   CONFIG_BLOCKED shape (05 §6 notes). Fixed key order. Download via Blob as report_<run_id>.json.
+6. ui.js + index.html, styled per DESIGN.md:
+   - Screen 2 Pre-check: IL1–IL7 lamps (text + colour, never colour alone); START enabled only
+     when all are OK.
+   - Screen 3 Run: stage list (status + class); active reading card (value, unit, rule, basis
+     chip, reference chip, NOT APPROVED chip, margin); equation with values; bench panel (v_bus_v,
+     source, contactor, door, gate command vs measured); event log with both clocks; the two
+     clocks and the caption; demo controls Abort / Open door / Heartbeat loss. A timer calls
+     advance(speed × real dt).
+   - Screen 4 Result: overall verdict, label, precedence reason; per-reading table with chips;
+     hypotheses box ("not diagnoses"); safe-state summary; clocks; Download JSON.
+   - FAULT_LOCKED red banner (fixed text) with "Reset simulation". 1b's Export button now
+     downloads the CONFIG_BLOCKED JSON.
+7. dev/run-node.js (not loaded by index.html; leave dev/ out of the zip): loads data.js,
+   validate.js, rng.js, models.js, engine.js, sequencer.js, report.js with a window shim, runs one
+   scenario to the end and prints the deterministic section.
+   Usage: node dev/run-node.js S0 > s0.json
+8. selfcheck.html: add S0 engine checks (every S0 key value, stage statuses, safe-state block,
+   499.85 s physical, 62.48 s animation at speed 8, exactly one DISCHARGE_START).
+
+Done when:
+- node dev/run-node.js S0 matches every S0 cell of 03 §12: all stages DONE PASS, T06
+  NOT_APPLICABLE, T08b NOT_MODELLED; Q01 0.35 V · Q02 true · Q03/Q03b 6.0 W · Q04 11.0 W ·
+  Q05 true · Q06 15.0 V · Q07 −15.0 V · Q08 0.05 mA · Q09 2.40 V · Q11 0.05 mA · Q16 100 µs ·
+  Q12 1800 A/µs · Q13 780 V · Q14 6.5 µs · Q18 −15.0 V; v0 600 V, discharge 24.85 s, verified
+  40.94 V, SAFE; overall PASS with the 05 §8 label; physical_total_s 499.85; animation 62.48 s at
+  speed 8.
+- AC-02: two node runs of S0 give byte-identical deterministic sections (empty diff).
+- AC-12, in the browser: S0 with a manual Abort during T08a gives exactly one DISCHARGE_START;
+  more Abort clicks only add WARNING events; the door unlocks only after DISCHARGE_VERIFIED.
+- Browser, file://, Wi-Fi off: Setup → Pre-check → Run → Result for S0 with no console errors;
+  every judged reading shows basis, reference (if any) and NOT APPROVED; Q08 shows
+  CASE_TRANSFERRED; the banner is on every screen.
+- The downloaded report_<run_id>.json parses and has "simulation": true and the banner text.
+- grep -nE '\bS[0-9]+b?\b|CUSTOM' igbt-test-cell/js/engine.js igbt-test-cell/js/models.js
+  igbt-test-cell/js/sequencer.js returns nothing; grep -rnE 'fetch\(|type="module"|https?://'
+  igbt-test-cell returns nothing.
+- selfcheck.html: all cases PASS (give the count).
+Commit "TICKET 02: engine, sequencer, safe state, S0 + JSON". Report in the standing format,
+with the S0 actual-vs-expected table.
+```

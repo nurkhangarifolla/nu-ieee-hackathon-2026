@@ -18,7 +18,7 @@ Hackathon at Nazarbayev University, 17 Oct 2026. Three rail companies each set o
 | – | [[Projects/Stadler – Steel vs Aluminium/Brief\|Steel vs Aluminium carbodies]] | Stadler Kazakhstan | Life-cycle energy cost of a light aluminium train vs a heavier steel one, then apply it to Kazakhstan | Not chosen |
 | – | [[Projects/Alstom – TF1-PP Transformer/Brief\|TF1-PP Transformer failures]] | Alstom | Find the root cause of repeated voltage-transformer failures on KZ8A locomotives | Not chosen |
 
-Each project folder has a `Brief.md` (goal, audience, constraints, status) and a `Decisions.md` (decision log table). Wabtec also has `Tickets.md` (builder tickets) and `Specs/` (Said's build specs).
+Each project folder has a `Brief.md` (goal, audience, constraints, status) and a `Decisions.md` (decision log table). Wabtec also has `Tickets.md` (builder tickets; TICKET 02 is written) and `Specs/` (Said's build specs).
 
 - Stadler: [[Projects/Stadler – Steel vs Aluminium/Brief|Brief]] · [[Projects/Stadler – Steel vs Aluminium/Decisions|Decisions]]
 - Wabtec: [[Projects/Wabtec – IGBT Test Cell/Brief|Brief]] · [[Projects/Wabtec – IGBT Test Cell/Decisions|Decisions]] · [[Projects/Wabtec – IGBT Test Cell/Tickets|Tickets]]
@@ -40,6 +40,7 @@ Each project folder has a `Brief.md` (goal, audience, constraints, status) and a
 | --- | --- |
 | 2026-10-17 | [[Sessions/2026-10-17 Wabtec kickoff]] |
 | 2026-10-17 | [[Sessions/2026-10-17 TICKET 01 skeleton]] |
+| 2026-10-17 | [[Sessions/2026-10-17 Repo, design pass, TICKET 02]] |
 
 ## Sources (summaries, 300 words or fewer)
 
@@ -56,12 +57,17 @@ Each project folder has a `Brief.md` (goal, audience, constraints, status) and a
 Hackathon/
 ├── 00 Index.md          ← you are here
 ├── CLAUDE.md            ← how Claude Code works in this vault (auto-loaded)
+├── DESIGN.md            ← app look and feel (NVIDIA style, adapted)
+├── design/screenshots/  ← design-pass screenshots
 ├── Projects/            ← one folder per case: Brief.md + Decisions.md (Wabtec: + Tickets.md, Specs/)
 ├── Sessions/            ← handoff notes, one per working session
 ├── igbt-test-cell/      ← Wabtec app (created by TICKET 01)
 ├── Sources/             ← summary notes, each linked to its original
-└── Originals/           ← untouched decks and transcript as received
+├── Originals/           ← untouched decks and transcript as received (.pptx not in git)
+└── graphify-out/        ← code and notes graph, rebuilt automatically (not in git)
 ```
+
+The whole vault is one git repo (created 17 Oct; the app's TICKET 01 history is kept).
 
 > [!tip] Adding new material
 > Put the raw file in `Originals/`, write a short summary in `Sources/` that links to it, log any choice it triggers in the right `Decisions.md`, and add a row to this index.

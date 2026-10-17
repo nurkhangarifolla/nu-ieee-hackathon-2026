@@ -13,12 +13,14 @@ The root folder is `/Users/nurhangarifolla/Hackathon /`. Its name ends with a **
 ```
 00 Index.md                          ← map of the vault; keep it current
 CLAUDE.md                            ← this file
+DESIGN.md                            ← app look and feel (NVIDIA style; project box at the top wins)
+design/screenshots/                  ← design-pass screenshots (not shipped)
 Projects/Wabtec – IGBT Test Cell/
   Brief.md, Decisions.md             ← goal and decision log
   Tickets.md                         ← work slices; TICKET 01 is written, start there
   Specs/02–05 (v0.3)                 ← SOURCE OF TRUTH (Said's)
   Specs/IGBT_Test_Cell_Analysis_Report.md  ← background; 02–05 win where they differ
-igbt-test-cell/                      ← the app (created by TICKET 01), git repo
+igbt-test-cell/                      ← the app (created by TICKET 01); the git repo is the vault root
 Sessions/                            ← one handoff note per session
 Sources/ (summaries), Originals/ (raw decks)  ← open originals only if a summary is missing something
 ```
@@ -35,7 +37,7 @@ Read the specs in this order: 04 (plan and priorities) → 02 (design) → 05 (d
 
 ## How to work
 1. **One slice at a time.** Each slice is a ticket in `Tickets.md` (goal, steps, Done when). If the next ticket isn't written yet, write it first. Order: 01 skeleton/validation → 02 engine + S0 (M1) → 03 S1–S8 + HTML report (M2) → 04 Custom + AC-14 + AC-01 (M3).
-2. Build in `igbt-test-cell/`. Commit each slice as `TICKET NN: summary`. Don't push.
+2. Build in `igbt-test-cell/`, styled per `DESIGN.md`. Commit each slice as `TICKET NN: summary` (one repo at the vault root; raw `.pptx` decks and `graphify-out/` are ignored). Don't push.
 3. **Check your own work before calling it done.** Test every Done-when line. The engine has no DOM, so run it with `node` (load `data.js` and `engine.js` with a `window` shim). Compare against the 03 §12 table and diff two runs for determinism (AC-02). Ask Nurkhan for browser screenshots and the second-laptop offline test (AC-01).
 4. Put your own small decisions in `igbt-test-cell/NOTES-FOR-NURKHAN.md` under "Needs your decision" and "Decisions I made". Team-level decisions go in `Decisions.md`.
 5. Ask Nurkhan only when you need a fact or choice that only he has. Otherwise keep going.
